@@ -319,10 +319,133 @@ def launch_zscore_peth(center_t):
 
     show_window_toast(f"PETH Generated at {center_t:.1f}s")
 
+def _get_window():
+    """Read window size from the entry box, fallback to 30."""
+    try:
+        val = float(window_entry.get())
+        return val if val > 0 else 30.0
+    except ValueError:
+        return 30.0
+
+
+def _annotate_peaks(ax_f, freqs, power, color, n_peaks=3):
+    """Find top N peaks and annotate with frequency + BPM labels."""
+    from scipy.signal import find_peaks
+    mask     = freqs >= 0.05
+    f_m      = freqs[mask]
+    p_m      = power[mask]
+    if len(p_m) < 3:
+        return
+    min_prom = 0.05 * p_m.max()
+    peaks, _ = find_peaks(p_m, prominence=min_prom)
+    if len(peaks) == 0:
+        return
+    top = sorted(peaks, key=lambda i: p_m[i], reverse=True)[:n_peaks]
+    for idx in top:
+        freq = f_m[idx]
+        pwr  = p_m[idx]
+        bpm  = freq * 60
+        ax_f.annotate(
+            f"{freq:.2f} Hz\n({bpm:.0f} bpm)",
+            xy=(freq, pwr),
+            xytext=(freq + 0.05, pwr * 0.92),
+            fontsize=7, color=color, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=color, lw=0.8),
+        )
+        ax_f.axvline(freq, color=color, lw=0.7, linestyle=':', alpha=0.5)
+
+
+def launch_fft(center_t):
+    """
+    Opens a FFT analysis popup centered on center_t.
+    TDT    -> single power spectrum panel.
+    Oxysoft -> two panels: mean O2Hb on top, mean HHb on bottom.
+    """
+    if cache is None:
+        return
+
+    window = _get_window()
+    fs     = cache['fs']
+
+    pop = tk.Toplevel(root)
+    pop.title(f"FFT — {cache['store']}  |  centre {center_t:.1f}s  |  window {window:.0f}s")
+
+    if cache.get('source') == 'Oxysoft':
+        x    = cache['x']
+        o2hb = cache['o2hb'].mean(axis=0)
+        hhb  = cache['hhb'].mean(axis=0)
+
+        fig_fft      = Figure(figsize=(8, 7), dpi=100)
+        ax_o2, ax_hh = fig_fft.subplots(2, 1)
+
+        for sig, ax_f, color, label in [
+            (o2hb, ax_o2, '#CC0000', 'Mean O2Hb'),
+            (hhb,  ax_hh, '#0033CC', 'Mean HHb'),
+        ]:
+            freqs, power, _, _ = pl.compute_fft_slice(x, sig, center_t, fs, window=window)
+            if len(freqs) > 0:
+                ax_f.plot(freqs, power, color=color, lw=1.5)
+                _annotate_peaks(ax_f, freqs, power, color)
+            ax_f.set_ylabel("Power", fontweight='bold')
+            ax_f.set_title(label, fontweight='bold')
+            ax_f.set_xlim(0.05, fs / 2)
+            ax_f.autoscale(axis='y')
+
+        ax_hh.set_xlabel("Frequency (Hz)", fontweight='bold')
+
+    else:
+        signal = cache['corr'] if show_corrected else cache['raw']
+        freqs, power, _, _ = pl.compute_fft_slice(cache['x'], signal, center_t, fs, window=window)
+
+        fig_fft = Figure(figsize=(8, 4), dpi=100)
+        ax_f    = fig_fft.add_subplot(111)
+
+        if len(freqs) > 0:
+            ax_f.plot(freqs, power, color='blue', lw=1.5)
+            _annotate_peaks(ax_f, freqs, power, 'blue')
+        ax_f.set_xlabel("Frequency (Hz)", fontweight='bold')
+        ax_f.set_ylabel("Power", fontweight='bold')
+        ax_f.set_title(f"FFT — {cache['store']}", fontweight='bold')
+        ax_f.set_xlim(0.05, fs / 2)
+        ax_f.autoscale(axis='y')
+
+    fig_fft.suptitle(f"centre {center_t:.1f}s  |  window {window:.0f}s",
+                     fontsize=10, color='gray')
+    fig_fft.tight_layout(rect=[0, 0.03, 1, 0.97])
+
+    canvas_fft = FigureCanvasTkAgg(fig_fft, master=pop)
+    canvas_fft.get_tk_widget().pack(fill="both", expand=True)
+
+    def save_fft_action():
+        ts         = datetime.datetime.now().strftime("%H%M%S")
+        default_fn = f"FFT_{cache['store']}_{int(center_t)}s_{ts}.png"
+        fpath = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
+            initialfile=default_fn, title="Export FFT"
+        )
+        if fpath:
+            try:
+                fig_fft.savefig(fpath, dpi=300, bbox_inches='tight')
+                show_window_toast("FFT Exported")
+            except Exception as e:
+                show_error(f"Export Failed: {str(e)}")
+
+    btn_frame = tk.Frame(pop)
+    btn_frame.pack(side="bottom", fill="x", pady=10)
+    tk.Button(btn_frame, text="Export FFT",
+              command=save_fft_action, bg="#2196F3", fg="white",
+              font=('Helvetica', 10, 'bold'), padx=20).pack()
+
+    show_window_toast(f"FFT at {center_t:.1f}s")
+
+
 def analysis_type(data):
     choice = plot_type_var.get()
     if choice == "Z-Score PETH":
         launch_zscore_peth(data)
+    elif choice == "FFT":
+        launch_fft(data)
 
 
 # ---------------------------------------------------------------------------
@@ -445,7 +568,13 @@ tk.Label(options_frame, text="|").pack(side="left", padx=5)
 # --- Analysis dropdown ---
 plot_type_var = tk.StringVar(root)
 plot_type_var.set("Analysis")
-tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH").pack(side="left", padx=10)
+tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH", "FFT").pack(side="left", padx=10)
+
+# --- Window size entry ---
+tk.Label(options_frame, text="Window (s):").pack(side="left", padx=(10, 2))
+window_entry = tk.Entry(options_frame, width=5)
+window_entry.insert(0, "30")
+window_entry.pack(side="left", padx=(0, 10))
 
 tk.Label(options_frame, text="|").pack(side="left", padx=5)
 
