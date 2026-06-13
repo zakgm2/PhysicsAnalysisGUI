@@ -6,6 +6,7 @@ from tkinter import filedialog
 import os
 import json
 import PhysicsLibrary as pl
+import matplotlib as plt
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.widgets import RectangleSelector
@@ -23,6 +24,11 @@ cache            = None
 is_dragging      = False
 press_x, press_y = None, None
 marker_mode      = False   # True when "Add Marker" is active
+tracker_dots = []
+connecting_line = None
+slope_mode_active = False
+slope_clicks = []  # Temporary storage to catch your 2 clicks for slope math
+active_snap_line  = None
 
 # Persisted plot customisations — survive redraws
 plot_attrs = {
@@ -349,8 +355,19 @@ def on_select(eclick, erelease):
     show_window_toast("Zoomed to Selection")
 
 def on_press(event):
-    global is_dragging, press_x, press_y
+    global is_dragging, press_x, press_y, slope_clicks
     if event.inaxes != ax:
+        return
+
+    if 'slope_clicks' not in globals():
+        slope_clicks = []
+
+    # --- Double left-click: analysis (Runs for FFT & Z-Score PETH) ---
+    # Moved to the VERY TOP of the checks so it intercepts cleanly before mode flags get in the way
+    if event.dblclick and event.button == 1 and event.xdata is not None:
+        if 'slope_clicks' in globals():
+            slope_clicks.clear()
+        analysis_type(event.xdata)
         return
 
     # --- Marker mode: left-click places, right-click context menu, nothing else ---
@@ -359,7 +376,7 @@ def on_press(event):
             _place_marker(event.xdata)
         elif event.button == 3 and event.xdata is not None:
             _right_click_marker_menu(event)
-        return   # block ALL other interactions while in marker mode
+        return
 
     # --- Right-click: context menu if near a marker, else pan ---
     if event.button == 3:
@@ -370,9 +387,48 @@ def on_press(event):
             press_x, press_y = event.x, event.y
         return
 
-    # --- Double left-click: analysis ---
-    if event.dblclick and event.button == 1 and event.xdata is not None:
-        analysis_type(event.xdata)
+    # --- Slope Mode Intercept (Single Left-Click Tracking) ---
+    if plot_type_var.get() == "Slope":
+        if event.button == 1 and not event.dblclick and event.xdata is not None:
+            try:
+                active_line = None
+                all_lines = ax.get_lines()
+                
+                # Try tracking active snap line first
+                if 'active_snap_line' in globals() and active_snap_line is not None:
+                    active_line = active_snap_line
+                
+                if active_line is None:
+                    for line in all_lines:
+                        label = str(line.get_label()).lower()
+                        if 'mean' in label or 'average' in label or 'avg' in label:
+                            active_line = line
+                            break
+                
+                if active_line is None:
+                    valid_lines = [l for l in all_lines if len(l.get_xdata()) > 2]
+                    if valid_lines:
+                        active_line = valid_lines[-1] 
+                
+                if active_line is None and all_lines:
+                    active_line = all_lines[0]
+
+                if active_line is None:
+                    show_error("No active data trace found to analyze.")
+                    return
+
+                x_data = active_line.get_xdata()
+                nearest_idx = int(np.abs(x_data - event.xdata).argmin())
+                
+                slope_clicks.append((nearest_idx, event.xdata))
+                show_window_toast(f"📍 Selected Target {len(slope_clicks)}: {event.xdata:.2f}s")
+                
+                if len(slope_clicks) == 2:
+                    launch_slope_analysis(active_line, slope_clicks[0], slope_clicks[1])
+                    slope_clicks.clear()
+            except Exception as e:
+                show_error(f"Slope Capture Failed: {str(e)}")
+                slope_clicks.clear()
         return
 
     # --- Middle-click: reset zoom ---
@@ -380,18 +436,115 @@ def on_press(event):
         reset_zoom()
 
 def on_motion(event):
-    global press_x, press_y
+    global press_x, press_y, tracker_dots, connecting_line, active_snap_line
+    
+    hover_ready = ('tracker_dots' in globals() and tracker_dots and 
+                   'connecting_line' in globals() and connecting_line is not None)
+
+    if hover_ready and event.inaxes == ax and event.xdata is not None and event.ydata is not None:
+        target_x = event.xdata
+        y_values_at_x = []
+        snap_x = None
+        closest_idx = None  
+        
+        target_labels = ['Mean O₂Hb', 'Mean HHb', 'ΔF/F (corrected)', 'Raw signal']
+        visible_lines = [
+            line for line in ax.get_lines() 
+            if line.get_label() in target_labels
+        ]
+        
+        if not visible_lines:
+            visible_lines = [
+                line for line in ax.get_lines() 
+                if len(line.get_xdata()) > 2 and not str(line.get_label()).startswith('_')
+            ]
+        
+        for i, line in enumerate(visible_lines):
+            x_data = line.get_xdata()
+            y_data = line.get_ydata()
+            
+            if len(x_data) > 0:
+                idx = np.abs(x_data - target_x).argmin()
+                closest_idx = idx  
+                snap_x = x_data[idx]
+                snap_y = y_data[idx]
+                y_values_at_x.append(snap_y)
+                
+                if i < len(tracker_dots):
+                    tracker_dots[i].set_data([snap_x], [snap_y])
+                    tracker_dots[i].set_color(line.get_color())
+                    tracker_dots[i].set_visible(True)
+                    
+                    # --- NEW: Dynamically capture the exact line being snapped to ---
+                    # We store whichever line matches the active cursor location
+                    active_snap_line = line
+        
+        raw_xlbl = ax.get_xlabel() if ax.get_xlabel() else plot_attrs.get("xlabel")
+        raw_ylbl = ax.get_ylabel() if ax.get_ylabel() else plot_attrs.get("ylabel")
+        
+        clean_xlbl = "X" if (raw_xlbl is None or str(raw_xlbl) == "None" or str(raw_xlbl).strip() == "") else str(raw_xlbl)
+        clean_ylbl = "Y" if (raw_ylbl is None or str(raw_ylbl) == "None" or str(raw_ylbl).strip() == "") else str(raw_ylbl)
+        
+        if closest_idx is not None:
+            coord_var.set(f"{clean_xlbl}: {event.xdata:.2f} s | {clean_ylbl}: {event.ydata:.4f} | Pt: {closest_idx}")
+        else:
+            coord_var.set(f"{clean_xlbl}: {event.xdata:.2f} s | {clean_ylbl}: {event.ydata:.4f} | Pt: --")
+        
+        if len(y_values_at_x) >= 2 and snap_x is not None:
+            connecting_line.set_data([snap_x, snap_x], [min(y_values_at_x), max(y_values_at_x)])
+            connecting_line.set_visible(True)
+        else:
+            if 'connecting_line' in globals() and connecting_line:
+                connecting_line.set_visible(False)
+            
+        for j in range(len(visible_lines), len(tracker_dots)):
+            tracker_dots[j].set_visible(False)
+            
+    elif hover_ready:
+        coord_var.set("X: -- | Y: -- | Pt: --")
+        if connecting_line:
+            connecting_line.set_visible(False)
+        for dot in tracker_dots:
+            dot.set_visible(False)
+
+    # 2. Panning / Dragging
     if not is_dragging or event.inaxes != ax:
+        canvas.draw_idle()
         return
     if event.x is None or event.y is None:
         return
-    dx, dy        = event.x - press_x, event.y - press_y
+        
+    dx, dy = event.x - press_x, event.y - press_y
     press_x, press_y = event.x, event.y
-    cur_xlim      = ax.get_xlim()
-    cur_ylim      = ax.get_ylim()
-    bbox          = ax.get_window_extent()
-    shift_x       = (dx / bbox.width)  * (cur_xlim[1] - cur_xlim[0])
-    shift_y       = (dy / bbox.height) * (cur_ylim[1] - cur_ylim[0])
+    cur_xlim = ax.get_xlim()
+    cur_ylim = ax.get_ylim()
+    bbox = ax.get_window_extent()
+    
+    shift_x = (dx / bbox.width) * (cur_xlim[1] - cur_xlim[0])
+    shift_y = (dy / bbox.height) * (cur_ylim[1] - cur_ylim[0])
+    
+    ax.set_xlim(cur_xlim[0] - shift_x, cur_xlim[1] - shift_x)
+    ax.set_ylim(cur_ylim[0] - shift_y, cur_ylim[1] - shift_y)
+    canvas.draw_idle()
+
+    # -----------------------------------------------------------------------
+    # 2. Maintain Existing Panning/Dragging Logic
+    # -----------------------------------------------------------------------
+    if not is_dragging or event.inaxes != ax:
+        canvas.draw_idle()
+        return
+    if event.x is None or event.y is None:
+        return
+        
+    dx, dy = event.x - press_x, event.y - press_y
+    press_x, press_y = event.x, event.y
+    cur_xlim = ax.get_xlim()
+    cur_ylim = ax.get_ylim()
+    bbox = ax.get_window_extent()
+    
+    shift_x = (dx / bbox.width) * (cur_xlim[1] - cur_xlim[0])
+    shift_y = (dy / bbox.height) * (cur_ylim[1] - cur_ylim[0])
+    
     ax.set_xlim(cur_xlim[0] - shift_x, cur_xlim[1] - shift_x)
     ax.set_ylim(cur_ylim[0] - shift_y, cur_ylim[1] - shift_y)
     canvas.draw_idle()
@@ -437,6 +590,165 @@ def zoom_factory(ax, base_scale=1.2):
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
+def _get_window():
+    """Helper to parse the time-window length configuration from the UI entry."""
+    try:
+        val = float(window_entry.get())
+        return val if val > 0 else 30.0
+    except (ValueError, NameError):
+        return 30.0
+
+
+def export_figure_to_file(fig_obj, default_prefix, tracking_info=""):
+    """
+    Consolidated file-save dashboard routine for pipeline graphics.
+    Automatically handles formatting filenames and writing high-DPI images to disk.
+    """
+    import datetime
+    from tkinter import filedialog
+    
+    ts = datetime.datetime.now().strftime("%H%M%S")
+    store_name = cache.get('store', 'Data') if cache else 'Data'
+    suffix = f"_{tracking_info}" if tracking_info else ""
+    
+    fpath = filedialog.asksaveasfilename(
+        defaultextension=".png",
+        filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf"), ("SVG Vector", "*.svg")],
+        initialfile=f"{default_prefix}_{store_name}{suffix}_{ts}.png",
+        title=f"Export {default_prefix} Visualization"
+    )
+    if fpath:
+        try:
+            fig_obj.savefig(fpath, dpi=300, bbox_inches='tight')
+            show_window_toast(f"✅ {default_prefix} Exported")
+        except Exception as e:
+            show_error(f"Export Failed: {str(e)}")
+
+def launch_slope_analysis(source_line, p1_tuple, p2_tuple):
+    """
+    Renders an isolated popout window featuring data computations derived explicitly
+    for all major average/mean traces present on the main canvas.
+    """
+    from matplotlib.figure import Figure
+    global active_snap_line
+
+    p1_idx = p1_tuple[0]
+    p2_idx = p2_tuple[0]
+    
+    pop = tk.Toplevel(root)
+    pop.title("Slope Analysis Dashboard — ΔY/ΔX")
+    pop.geometry("640x620")  # Expanded slightly to fit multiple metrics readouts comfortably
+    pop.minsize(520, 500)
+    
+    # --- BULLETPROOF LABEL PARSER ---
+    raw_xlbl = ax.get_xlabel() if ax.get_xlabel() else plot_attrs.get("xlabel")
+    raw_ylbl = ax.get_ylabel() if ax.get_ylabel() else plot_attrs.get("ylabel")
+    
+    if raw_xlbl is None or str(raw_xlbl) == "None" or str(raw_xlbl).strip() == "":
+        clean_xlbl = "Time"
+    else:
+        clean_xlbl = str(raw_xlbl).replace(" (s)", "").replace("(s)", "").strip()
+        
+    if raw_ylbl is None or str(raw_ylbl) == "None" or str(raw_ylbl).strip() == "":
+        clean_ylbl = "Signal"
+    else:
+        clean_ylbl = str(raw_ylbl).strip()
+    
+    # --- METRICS TEXT HEADER CONTAINER ---
+    info_frame = tk.Frame(pop, bg="#ffffff", bd=1, relief="groove")
+    info_frame.pack(side="top", fill="x", padx=12, pady=12)
+    
+    # Define your main group targets 
+    target_labels = ['Mean O₂Hb', 'Mean HHb', 'ΔF/F (corrected)', 'Raw signal']
+    
+    # Separate your core averages from the underlying thin trials
+    all_lines = ax.get_lines()
+    major_lines = [l for l in all_lines if l.get_label() in target_labels]
+    
+    # Fallback: if no labels match exactly, treat any robust trace as a main line
+    if not major_lines:
+        major_lines = [l for l in all_lines if len(l.get_xdata()) > 2 and not str(l.get_label()).startswith('_')]
+
+    # Run the slope calculations loop for EVERY single major average line found
+    metrics_strings = []
+    calculation_results = {} # Store results to use down in the plot section
+    
+    for line in major_lines:
+        l_name = line.get_label() if line.get_label() else "Data Trace"
+        full_x = line.get_xdata()
+        full_y = line.get_ydata()
+        
+        # Calculate individual slope metrics for this specific line
+        res = pl.compute_slope_segment(full_x, full_y, p1_idx, p2_idx)
+        calculation_results[line] = res
+        
+        # Format string tracking for this line
+        line_summary = (
+            f"📈 【{l_name}】\n"
+            f"   P1: ({res['x1']:.2f}s, {res['y1']:.4f}) | P2: ({res['x2']:.2f}s, {res['y2']:.4f})\n"
+            f"   Δ {clean_xlbl}: {res['x2'] - res['x1']:.3f} s | Δ {clean_ylbl}: {res['y2'] - res['y1']:.5f}\n"
+            f"   Calculated Slope (m): {res['slope']:.6f}\n"
+        )
+        metrics_strings.append(line_summary)
+    
+    # Combine all individual line readouts with a clean dividing boundary
+    divider = "—" * 65 + "\n"
+    metrics_text = divider.join(metrics_strings)
+    
+    lbl = tk.Label(info_frame, text=metrics_text, font=("Consolas", 9), 
+                   justify="left", bg="#ffffff", padx=10, pady=10)
+    lbl.pack(anchor="w")
+    
+    # --- SUBPLOT RENDERING DESIGN ---
+    sub_fig = Figure(figsize=(5.5, 3.5), dpi=100)
+    sub_ax = sub_fig.add_subplot(111)
+    
+    # Reference limits from whatever trace calculation finished last to determine the view window boundary
+    last_res = list(calculation_results.values())[-1]
+    x_min, x_max = min(last_res['crop_x']), max(last_res['crop_x'])
+    
+    # Plot all overlay curves (both pale trials and thick averages)
+    for line in all_lines:
+        if len(line.get_xdata()) <= 2 or str(line.get_label()).startswith('_'):
+            continue
+            
+        l_x = line.get_xdata()
+        l_y = line.get_ydata()
+        
+        mask = (l_x >= x_min) & (l_x <= x_max)
+        crop_lx = l_x[mask]
+        crop_ly = l_y[mask]
+        
+        if len(crop_lx) > 0:
+            if line in major_lines:
+                # This is an average line! Draw it thick
+                res = calculation_results[line]
+                sub_ax.plot(crop_lx, crop_ly, color=line.get_color(), lw=2.5, zorder=4, label=line.get_label())
+                
+                # Draw the specific slope projection dashed vector and target rings for each average line
+                sub_ax.plot([res['x1'], res['x2']], [res['y1'], res['y2']], 'o', color=line.get_color(), markersize=6, zorder=5)
+                sub_ax.plot([res['x1'], res['x2']], [res['y1'], res['y2']], '--', color='black', lw=1.2, alpha=0.7, zorder=4)
+            else:
+                # This is a raw trial swipe! Keep it pale and transparent in the background
+                sub_ax.plot(crop_lx, crop_ly, color=line.get_color(), lw=0.7, alpha=0.25, zorder=2)
+
+    sub_ax.set_xlabel(f"{clean_xlbl} (s)", fontweight='bold')
+    sub_ax.set_ylabel(clean_ylbl, fontweight='bold')
+    sub_ax.grid(True, linestyle=':', alpha=0.6)
+    sub_ax.legend(loc='upper right', fontsize=8)
+    sub_ax.set_title("Localized Slope Linear Projection Window", fontsize=10, fontweight='bold')
+    sub_fig.tight_layout()
+    
+    sub_canvas = FigureCanvasTkAgg(sub_fig, master=pop)
+    sub_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=12, pady=5)
+    sub_canvas.draw()
+    
+    btn_frame = tk.Frame(pop)
+    btn_frame.pack(side="bottom", fill="x", pady=10)
+    tk.Button(btn_frame, text="💾 Export Multi-Slope Analysis",
+              command=lambda: export_figure_to_file(sub_fig, "MultiSlope", f"{int(last_res['x1'])}s_{int(last_res['x2'])}s"),
+              bg="#2196F3", fg="white", font=('Helvetica', 10, 'bold'), padx=20).pack()
+
 
 def launch_zscore_peth(center_t):
     if cache is None or cache.get('source') != 'TDT':
@@ -449,50 +761,38 @@ def launch_zscore_peth(center_t):
         return
     z_binned = pl.bin_for_heatmap(z_seg)
     mode_str = "Corrected" if show_corrected else "Raw"
+    
     pop = tk.Toplevel(root)
     pop.title(f"PETH Analysis ({mode_str}) - {center_t:.2f}s")
-    fig_peth         = Figure(figsize=(8, 7), dpi=100)
+    
+    fig_peth = Figure(figsize=(8, 7), dpi=100)
     ax_heat, ax_line = fig_peth.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [1, 1]})
+    
     ax_heat.imshow(z_binned.reshape(1, -1), aspect='auto', cmap='YlGnBu_r',
-                   extent=[-30, 30, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
+                    extent=[-30, 30, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
     ax_heat.set_yticks([])
     ax_heat.set_ylabel("Intensity", fontweight='bold')
+    
     ax_line.plot(slice_x - center_t, z_seg, color='black', linewidth=1.5)
     ax_line.axvline(0, color='red', linestyle='--', alpha=0.8)
     ax_line.set_xlim([-15, 15])
     ax_line.set_ylim([-5, 5])
     ax_line.set_ylabel(f"Z-Score ({mode_str})", fontweight='bold')
     ax_line.set_xlabel("Time from Center (s)", fontweight='bold')
+    
     fig_peth.suptitle("Z-score PETH", fontsize=14, fontweight='bold')
     fig_peth.tight_layout(rect=[0, 0.05, 1, 0.95])
+    
     canvas_peth = FigureCanvasTkAgg(fig_peth, master=pop)
     canvas_peth.get_tk_widget().pack(fill="both", expand=True)
-    def save_peth_action():
-        ts = datetime.datetime.now().strftime("%H%M%S")
-        fpath = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
-            initialfile=f"PETH_{mode_str}_{int(center_t)}s_{ts}.png", title="Export PETH"
-        )
-        if fpath:
-            try:
-                fig_peth.savefig(fpath, dpi=300, bbox_inches='tight')
-                show_window_toast("✅ PETH Exported")
-            except Exception as e:
-                show_error(f"Export Failed: {str(e)}")
+    
     btn_frame = tk.Frame(pop)
     btn_frame.pack(side="bottom", fill="x", pady=10)
     tk.Button(btn_frame, text=f"💾 Export {mode_str} PETH",
-              command=save_peth_action, bg="#2196F3", fg="white",
-              font=('Helvetica', 10, 'bold'), padx=20).pack()
+              command=lambda: export_figure_to_file(fig_peth, f"PETH_{mode_str}", f"{int(center_t)}s"),
+              bg="#2196F3", fg="white", font=('Helvetica', 10, 'bold'), padx=20).pack()
+              
     show_window_toast(f"PETH Generated at {center_t:.1f}s")
-
-def _get_window():
-    try:
-        val = float(window_entry.get())
-        return val if val > 0 else 30.0
-    except ValueError:
-        return 30.0
 
 def launch_fft(center_t):
     if cache is None:
@@ -560,14 +860,29 @@ def launch_fft(center_t):
               font=('Helvetica', 10, 'bold'), padx=20).pack()
     show_window_toast(f"FFT at {center_t:.1f}s")
 
-def analysis_type(data):
-    choice = plot_type_var.get()
-    if choice == "Z-Score PETH":
-        launch_zscore_peth(data)
-    elif choice == "FFT":
-        launch_fft(data)
 
+def analysis_type(clicked_x):
+    """
+    Central router that handles double-click events, ensures timestamps 
+    are clean floats, and routes to the correct localized window.
+    """
+    if clicked_x is None:
+        return
 
+    try:
+        center_timestamp = float(clicked_x)
+    except (ValueError, TypeError):
+        show_error("Invalid coordinate format captured.")
+        return
+
+    current_mode = plot_type_var.get()
+
+    if current_mode == "FFT":
+        launch_fft(center_timestamp)
+    elif current_mode == "Z-Score PETH" or current_mode == "PETH":
+        launch_zscore_peth(center_timestamp)
+    elif current_mode == "Slope":
+        show_window_toast("ℹ️ In Slope Mode: Use single-clicks to anchor points instead of double-clicking.")
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
@@ -630,6 +945,8 @@ def _apply_plot_attrs():
 
 
 def simple_plot(draw_now=True):
+    global tracker_dots, connecting_line # Make these accessible to on_motion
+    
     if cache is None:
         return
     ax.clear()
@@ -663,6 +980,18 @@ def simple_plot(draw_now=True):
     ax.legend(loc='upper left', fontsize=8)
     ax.set_xlim(cache['x'][0], cache['x'][-1])
     _apply_plot_attrs()
+    
+    # ---------------------------------------------------------------------------
+    # Re-initialize Hover Elements (Ensures they survive ax.clear())
+    # ---------------------------------------------------------------------------
+    tracker_dots = []
+    # We only need 2 tracking dots now for the primary thick lines
+    for _ in range(2):  
+        dot, = ax.plot([], [], 'o', markersize=6, animated=False, zorder=5)
+        tracker_dots.append(dot)
+        
+    connecting_line, = ax.plot([], [], ':', color='gray', linewidth=1.0, alpha=0.7, zorder=4)
+
     if draw_now:
         canvas.draw()
 
@@ -864,7 +1193,7 @@ tk.Label(options_frame, text="|").pack(side="left", padx=5)
 # --- Analysis dropdown + window ---
 plot_type_var = tk.StringVar(root)
 plot_type_var.set("Analysis")
-tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH", "FFT").pack(side="left", padx=10)
+tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH", "FFT", "Slope").pack(side="left", padx=10)
 tk.Label(options_frame, text="Window (s):").pack(side="left", padx=(10, 2))
 window_entry = tk.Entry(options_frame, width=5)
 window_entry.insert(0, "30")
@@ -929,5 +1258,13 @@ rect_selector = RectangleSelector(
     interactive=True
 )
 rect_selector.set_active(True)
+
+# ---------------------------------------------------------------------------
+# Status Bar for Coordinates
+# ---------------------------------------------------------------------------
+coord_var = tk.StringVar(value="X: -- | Y: -- | Pt: --")
+status_bar = tk.Label(root, textvariable=coord_var, bd=1, relief="sunken", 
+                      anchor="w", font=("Consolas", 9), bg="#f0f0f0", padx=10, pady=3)
+status_bar.pack(side="bottom", fill="x")
 
 root.mainloop()
