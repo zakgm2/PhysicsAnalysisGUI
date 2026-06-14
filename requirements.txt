@@ -1,1 +1,5 @@
-git+https://github.com/yourusername/PhysicsLibrary.git
+numpy
+matplotlib
+scipy
+openpyxl
+git+https://github.com/zakgm2/PhysicsLibrary.git

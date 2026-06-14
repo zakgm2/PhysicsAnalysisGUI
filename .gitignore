@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Physics Analysis — project-specific
+*.markers.json
+*.png
+*.pdf
+*.svg
