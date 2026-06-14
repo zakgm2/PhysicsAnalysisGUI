@@ -29,6 +29,9 @@ connecting_line = None
 slope_mode_active = False
 slope_clicks = []  # Temporary storage to catch your 2 clicks for slope math
 active_snap_line  = None
+_hover_bg        = None   # blitting background cache
+_hover_bg_timer  = None   # debounce handle for background recapture
+show_grid        = True
 
 # Persisted plot customisations — survive redraws
 plot_attrs = {
@@ -149,26 +152,37 @@ def _place_marker(t):
     e_name.focus_set()
     e_name.select_range(0, tk.END)
 
-    # Colour picker (simple preset list)
+    # Colour picker
+    _MARKER_COLORS = ["green", "red", "blue", "orange", "purple", "black"]
     tk.Label(win, text="Colour:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
     color_var = tk.StringVar(value="green")
     color_frame = tk.Frame(win)
     color_frame.grid(row=1, column=1, padx=10, pady=5, sticky="w")
-    for col in ["green", "red", "blue", "orange", "purple"]:
+    for col in _MARKER_COLORS:
         tk.Radiobutton(color_frame, text=col, variable=color_var,
                        value=col, fg=col).pack(side="left")
+
+    # Font size
+    tk.Label(win, text="Font size:").grid(row=2, column=0, padx=10, pady=5, sticky="e")
+    e_fontsize = tk.Entry(win, width=6)
+    e_fontsize.insert(0, "8")
+    e_fontsize.grid(row=2, column=1, padx=10, pady=5, sticky="w")
 
     def _confirm():
         label = e_name.get().strip() or "Marker"
         color = color_var.get()
-        cache['markers'].append({"time": t, "label": label, "color": color})
+        try:
+            fontsize = max(4, int(e_fontsize.get()))
+        except ValueError:
+            fontsize = 8
+        cache['markers'].append({"time": t, "label": label, "color": color, "fontsize": fontsize})
         simple_plot()
         win.destroy()
 
     tk.Button(win, text="Add", command=_confirm,
               bg="#4CAF50", fg="white",
               font=('Helvetica', 9, 'bold'),
-              padx=20).grid(row=2, column=0, columnspan=2, pady=10)
+              padx=20).grid(row=3, column=0, columnspan=2, pady=10)
 
     win.bind("<Return>", lambda e: _confirm())
 
@@ -195,23 +209,40 @@ def _right_click_marker_menu(event):
 
     def _rename():
         win = tk.Toplevel(root)
-        win.title("Rename Marker")
+        win.title("Edit Marker")
         win.resizable(False, False)
         win.grab_set()
-        tk.Label(win, text="New name:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
+        tk.Label(win, text="Name:").grid(row=0, column=0, padx=10, pady=10, sticky="e")
         e = tk.Entry(win, width=25)
         e.insert(0, marker['label'])
         e.grid(row=0, column=1, padx=10, pady=10)
         e.focus_set()
         e.select_range(0, tk.END)
+        _MARKER_COLORS = ["green", "red", "blue", "orange", "purple", "black"]
+        tk.Label(win, text="Colour:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
+        color_var = tk.StringVar(value=marker.get('color', 'green'))
+        color_frame = tk.Frame(win)
+        color_frame.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+        for col in _MARKER_COLORS:
+            tk.Radiobutton(color_frame, text=col, variable=color_var,
+                           value=col, fg=col).pack(side="left")
+        tk.Label(win, text="Font size:").grid(row=2, column=0, padx=10, pady=5, sticky="e")
+        e_fs = tk.Entry(win, width=6)
+        e_fs.insert(0, str(marker.get('fontsize', 8)))
+        e_fs.grid(row=2, column=1, padx=10, pady=5, sticky="w")
         def _ok():
             marker['label'] = e.get().strip() or marker['label']
+            marker['color'] = color_var.get()
+            try:
+                marker['fontsize'] = max(4, int(e_fs.get()))
+            except ValueError:
+                pass
             simple_plot()
             win.destroy()
         tk.Button(win, text="OK", command=_ok,
                   bg="#4CAF50", fg="white",
                   font=('Helvetica', 9, 'bold'),
-                  padx=20).grid(row=1, column=0, columnspan=2, pady=10)
+                  padx=20).grid(row=3, column=0, columnspan=2, pady=10)
         win.bind("<Return>", lambda ev: _ok())
 
     def _delete():
@@ -256,6 +287,196 @@ def open_file():
     root.title(f"Physics Analysis — {name}")
     show_success(f"File: {name}")
     load_data_action()
+
+
+# ---------------------------------------------------------------------------
+# Generic file loader (any tabular format)
+# ---------------------------------------------------------------------------
+
+def launch_generic_file_loader():
+    """Open any tabular file, detect sub-tables, let user pick columns and plot."""
+    import PhysicsLibrary.file_parser_generic as _gen
+
+    path = filedialog.askopenfilename(
+        title="Open Any Tabular File",
+        filetypes=[
+            ("All tabular", "*.xlsx *.xls *.csv *.tsv *.txt *.dat"),
+            ("Excel",       "*.xlsx *.xls"),
+            ("CSV / TSV",   "*.csv *.tsv"),
+            ("Text / data", "*.txt *.dat"),
+            ("All files",   "*.*"),
+        ]
+    )
+    if not path:
+        return
+
+    try:
+        tables = _gen.load_any_file(path)
+    except Exception as e:
+        show_error(f"Could not parse file:\n{e}")
+        return
+
+    if not tables:
+        show_error("No usable tabular data found in this file.")
+        return
+
+    # ── Picker dialog ──────────────────────────────────────────────────────
+    dlg = tk.Toplevel(root)
+    dlg.title(f"Generic Loader — {os.path.basename(path)}")
+    dlg.geometry("780x540")
+    dlg.resizable(True, True)
+
+    # Left column: table list
+    left = tk.Frame(dlg, width=200)
+    left.pack(side="left", fill="y", padx=(10, 4), pady=10)
+    left.pack_propagate(False)
+
+    tk.Label(left, text="Detected tables:", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+    tbl_lb = tk.Listbox(left, selectmode="single", font=("Consolas", 8))
+    tbl_lb.pack(fill="both", expand=True)
+    for t in tables:
+        tbl_lb.insert("end", t.name)
+
+    # Right column: column pickers + preview
+    right = tk.Frame(dlg)
+    right.pack(side="left", fill="both", expand=True, padx=(4, 10), pady=10)
+
+    # X column
+    xrow = tk.Frame(right)
+    xrow.pack(fill="x", pady=(0, 4))
+    tk.Label(xrow, text="X:", font=('Helvetica', 9, 'bold'), width=12, anchor="w").pack(side="left")
+    x_var = tk.StringVar()
+    x_menu = tk.OptionMenu(xrow, x_var, "")
+    x_menu.config(width=30)
+    x_menu.pack(side="left")
+
+    # Y columns (multi-select)
+    yrow = tk.Frame(right)
+    yrow.pack(fill="x", pady=(0, 4))
+    tk.Label(yrow, text="Y (multi-select):", font=('Helvetica', 9, 'bold'), width=12, anchor="w").pack(side="left")
+    y_lb = tk.Listbox(yrow, selectmode="extended", height=6, font=("Consolas", 8), width=34)
+    y_lb.pack(side="left", fill="x", expand=True)
+    y_scroll = tk.Scrollbar(yrow, orient="vertical", command=y_lb.yview)
+    y_scroll.pack(side="left", fill="y")
+    y_lb.config(yscrollcommand=y_scroll.set)
+
+    # Error-bar column (optional)
+    erow = tk.Frame(right)
+    erow.pack(fill="x", pady=(0, 8))
+    tk.Label(erow, text="Error bars (opt):", font=('Helvetica', 9, 'bold'), width=12, anchor="w").pack(side="left")
+    err_var = tk.StringVar(value="— none —")
+    err_menu = tk.OptionMenu(erow, err_var, "— none —")
+    err_menu.config(width=30)
+    err_menu.pack(side="left")
+
+    # Data preview
+    tk.Label(right, text="Preview:", font=('Helvetica', 9, 'bold')).pack(anchor="w")
+    preview = tk.Text(right, height=8, font=("Consolas", 8), state="disabled",
+                      bg="#f8f8f8", relief="groove")
+    preview.pack(fill="both", expand=True)
+
+    current_table: list = [None]
+
+    def _refresh_preview(t: "_gen.GenericTable"):
+        preview.config(state="normal")
+        preview.delete("1.0", "end")
+        preview.insert("end", "\t".join(t.headers) + "\n")
+        preview.insert("end", "─" * 60 + "\n")
+        for ri in range(min(8, t.data.shape[0])):
+            cells = []
+            for v in t.data[ri]:
+                cells.append(f"{v:.5g}" if not np.isnan(v) else "—")
+            preview.insert("end", "\t".join(cells) + "\n")
+        preview.config(state="disabled")
+
+    def _on_table_select(event=None):
+        sel = tbl_lb.curselection()
+        if not sel:
+            return
+        t = tables[sel[0]]
+        current_table[0] = t
+
+        # Rebuild X menu
+        x_menu['menu'].delete(0, 'end')
+        for h in t.headers:
+            x_menu['menu'].add_command(label=h, command=lambda h=h: x_var.set(h))
+        x_var.set(t.headers[0] if t.headers else "")
+
+        # Rebuild Y listbox
+        y_lb.delete(0, 'end')
+        for h in t.headers:
+            y_lb.insert('end', h)
+        for i in range(1, len(t.headers)):       # default: all columns except X
+            y_lb.selection_set(i)
+
+        # Rebuild error bar menu
+        err_menu['menu'].delete(0, 'end')
+        err_menu['menu'].add_command(label="— none —", command=lambda: err_var.set("— none —"))
+        for h in t.headers:
+            err_menu['menu'].add_command(label=h, command=lambda h=h: err_var.set(h))
+        err_var.set("— none —")
+
+        _refresh_preview(t)
+
+    tbl_lb.bind("<<ListboxSelect>>", _on_table_select)
+    tbl_lb.selection_set(0)
+    _on_table_select()
+
+    def _do_load():
+        global cache
+        t = current_table[0]
+        if t is None:
+            return
+
+        y_indices = list(y_lb.curselection())
+        if not y_indices:
+            show_error("Select at least one Y column.")
+            return
+
+        try:
+            x_idx = t.headers.index(x_var.get())
+        except ValueError:
+            x_idx = 0
+
+        x_data = t.data[:, x_idx]
+        # Remove rows where X is NaN
+        valid = ~np.isnan(x_data)
+        x_data = x_data[valid]
+
+        y_columns = {}
+        for yi in y_indices:
+            col_name = t.headers[yi]
+            y_col    = t.data[valid, yi]
+            y_columns[col_name] = y_col
+
+        # Estimate sample rate from X spacing
+        if len(x_data) > 1:
+            fs = float(1.0 / np.median(np.diff(x_data)))
+        else:
+            fs = 1.0
+
+        cache = {
+            "source":    "Generic",
+            "x":         x_data,
+            "y_columns": y_columns,
+            "x_label":   x_var.get(),
+            "store":     t.name,
+            "fs":        fs,
+            "markers":   [],
+        }
+
+        dlg.destroy()
+        simple_plot()
+        show_success(f"Loaded: {t.name}")
+
+    # Bottom buttons
+    brow = tk.Frame(dlg)
+    brow.pack(side="bottom", fill="x", padx=10, pady=8)
+    tk.Button(brow, text="▶  Load to Main Plot", command=_do_load,
+              bg="#4CAF50", fg="white",
+              font=('Helvetica', 10, 'bold'), padx=20).pack(side="left", padx=4)
+    tk.Button(brow, text="Close", command=dlg.destroy,
+              bg="#e1e1e1", font=('Helvetica', 10, 'bold'), padx=20).pack(side="left", padx=4)
 
 
 # ---------------------------------------------------------------------------
@@ -318,13 +539,16 @@ def _load_single_file(file_path):
         x       = np.arange(dataset.num_samples) / dataset.sample_rate
         o2hb    = dataset.signals[:n_ch]
         hhb     = dataset.signals[n_ch:]
+        thb = o2hb + hhb
         cache = {
-            "source":  "Oxysoft",
-            "x":       x,
-            "o2hb":    o2hb,
-            "hhb":     hhb,
-            "fs":      dataset.sample_rate,
-            "store":   os.path.splitext(os.path.basename(file_path))[0],
+            "source":         "Oxysoft",
+            "x":              x,
+            "o2hb":           o2hb,
+            "hhb":            hhb,
+            "thb":            thb,
+            "fs":             dataset.sample_rate,
+            "store":          os.path.splitext(os.path.basename(file_path))[0],
+            "fit_factor_mean": dataset.metadata.get("fit_factor_mean", None),
             "markers": [
                 {"time":  ev["sample"] / dataset.sample_rate,
                  "label": ev["label"],
@@ -351,7 +575,7 @@ def on_select(eclick, erelease):
     ax.set_xlim(min(x1, x2), max(x1, x2))
     ax.set_ylim(min(y1, y2), max(y1, y2))
     rect_selector.clear()
-    canvas.draw_idle()
+    _refresh_hover_bg()
     show_window_toast("Zoomed to Selection")
 
 def on_press(event):
@@ -387,48 +611,10 @@ def on_press(event):
             press_x, press_y = event.x, event.y
         return
 
-    # --- Slope Mode Intercept (Single Left-Click Tracking) ---
-    if plot_type_var.get() == "Slope":
-        if event.button == 1 and not event.dblclick and event.xdata is not None:
-            try:
-                active_line = None
-                all_lines = ax.get_lines()
-                
-                # Try tracking active snap line first
-                if 'active_snap_line' in globals() and active_snap_line is not None:
-                    active_line = active_snap_line
-                
-                if active_line is None:
-                    for line in all_lines:
-                        label = str(line.get_label()).lower()
-                        if 'mean' in label or 'average' in label or 'avg' in label:
-                            active_line = line
-                            break
-                
-                if active_line is None:
-                    valid_lines = [l for l in all_lines if len(l.get_xdata()) > 2]
-                    if valid_lines:
-                        active_line = valid_lines[-1] 
-                
-                if active_line is None and all_lines:
-                    active_line = all_lines[0]
-
-                if active_line is None:
-                    show_error("No active data trace found to analyze.")
-                    return
-
-                x_data = active_line.get_xdata()
-                nearest_idx = int(np.abs(x_data - event.xdata).argmin())
-                
-                slope_clicks.append((nearest_idx, event.xdata))
-                show_window_toast(f"📍 Selected Target {len(slope_clicks)}: {event.xdata:.2f}s")
-                
-                if len(slope_clicks) == 2:
-                    launch_slope_analysis(active_line, slope_clicks[0], slope_clicks[1])
-                    slope_clicks.clear()
-            except Exception as e:
-                show_error(f"Slope Capture Failed: {str(e)}")
-                slope_clicks.clear()
+    # --- Curve Fit Mode: record mouse-down pixel position, act on release ---
+    if plot_type_var.get() == "Curve Fit":
+        if event.button == 1 and not event.dblclick:
+            press_x, press_y = event.x, event.y   # store for drag-detection in on_release
         return
 
     # --- Middle-click: reset zoom ---
@@ -436,122 +622,182 @@ def on_press(event):
         reset_zoom()
 
 def on_motion(event):
-    global press_x, press_y, tracker_dots, connecting_line, active_snap_line
-    
-    hover_ready = ('tracker_dots' in globals() and tracker_dots and 
-                   'connecting_line' in globals() and connecting_line is not None)
+    global press_x, press_y, tracker_dots, connecting_line, active_snap_line, _hover_bg
 
-    if hover_ready and event.inaxes == ax and event.xdata is not None and event.ydata is not None:
-        target_x = event.xdata
-        y_values_at_x = []
-        snap_x = None
-        closest_idx = None  
-        
-        target_labels = ['Mean O₂Hb', 'Mean HHb', 'ΔF/F (corrected)', 'Raw signal']
-        visible_lines = [
-            line for line in ax.get_lines() 
-            if line.get_label() in target_labels
-        ]
-        
-        if not visible_lines:
-            visible_lines = [
-                line for line in ax.get_lines() 
-                if len(line.get_xdata()) > 2 and not str(line.get_label()).startswith('_')
-            ]
-        
-        for i, line in enumerate(visible_lines):
-            x_data = line.get_xdata()
-            y_data = line.get_ydata()
-            
-            if len(x_data) > 0:
-                idx = np.abs(x_data - target_x).argmin()
-                closest_idx = idx  
-                snap_x = x_data[idx]
-                snap_y = y_data[idx]
-                y_values_at_x.append(snap_y)
-                
-                if i < len(tracker_dots):
-                    tracker_dots[i].set_data([snap_x], [snap_y])
-                    tracker_dots[i].set_color(line.get_color())
-                    tracker_dots[i].set_visible(True)
-                    
-                    # --- NEW: Dynamically capture the exact line being snapped to ---
-                    # We store whichever line matches the active cursor location
-                    active_snap_line = line
-        
-        raw_xlbl = ax.get_xlabel() if ax.get_xlabel() else plot_attrs.get("xlabel")
-        raw_ylbl = ax.get_ylabel() if ax.get_ylabel() else plot_attrs.get("ylabel")
-        
-        clean_xlbl = "X" if (raw_xlbl is None or str(raw_xlbl) == "None" or str(raw_xlbl).strip() == "") else str(raw_xlbl)
-        clean_ylbl = "Y" if (raw_ylbl is None or str(raw_ylbl) == "None" or str(raw_ylbl).strip() == "") else str(raw_ylbl)
-        
-        if closest_idx is not None:
-            coord_var.set(f"{clean_xlbl}: {event.xdata:.2f} s | {clean_ylbl}: {event.ydata:.4f} | Pt: {closest_idx}")
-        else:
-            coord_var.set(f"{clean_xlbl}: {event.xdata:.2f} s | {clean_ylbl}: {event.ydata:.4f} | Pt: --")
-        
-        if len(y_values_at_x) >= 2 and snap_x is not None:
-            connecting_line.set_data([snap_x, snap_x], [min(y_values_at_x), max(y_values_at_x)])
-            connecting_line.set_visible(True)
-        else:
-            if 'connecting_line' in globals() and connecting_line:
-                connecting_line.set_visible(False)
-            
-        for j in range(len(visible_lines), len(tracker_dots)):
-            tracker_dots[j].set_visible(False)
-            
-    elif hover_ready:
-        coord_var.set("X: -- | Y: -- | Pt: --")
-        if connecting_line:
+    # ── 1. Panning (right-click drag) ───────────────────────────────────────
+    if is_dragging and event.inaxes == ax and event.x is not None:
+        dx, dy = event.x - press_x, event.y - press_y
+        press_x, press_y = event.x, event.y
+        bbox    = ax.get_window_extent()
+        xlim    = ax.get_xlim()
+        ylim    = ax.get_ylim()
+        shift_x = (dx / bbox.width)  * (xlim[1] - xlim[0])
+        shift_y = (dy / bbox.height) * (ylim[1] - ylim[0])
+        ax.set_xlim(xlim[0] - shift_x, xlim[1] - shift_x)
+        ax.set_ylim(ylim[0] - shift_y, ylim[1] - shift_y)
+        canvas.draw_idle()
+        return   # skip hover while dragging
+
+    # ── 2. Hover tracker (blit-based for speed) ─────────────────────────────
+    hover_ready = (tracker_dots and connecting_line is not None and _hover_bg is not None)
+    if not hover_ready or event.inaxes != ax or event.xdata is None:
+        if hover_ready and not is_dragging:
+            # cursor left axes — hide all overlays via blit
+            canvas.restore_region(_hover_bg)
+            for dot in tracker_dots:
+                dot.set_visible(False)
+                ax.draw_artist(dot)
             connecting_line.set_visible(False)
+            ax.draw_artist(connecting_line)
+            canvas.blit(fig.bbox)
+            coord_var.set("X: -- | Y: -- | Pt: --")
+        return
+
+    target_x      = event.xdata
+    y_values_at_x = []
+    snap_x        = None
+    closest_idx   = None
+    best_y_dist   = float('inf')
+
+    visible_lines = [
+        l for l in ax.get_lines()
+        if not str(l.get_label()).startswith('_')
+        and len(l.get_xdata()) > 2
+        and l.get_linewidth() >= 1.5
+    ]
+
+    for i, line in enumerate(visible_lines):
+        x_data = np.asarray(line.get_xdata())
+        y_data = np.asarray(line.get_ydata())
+        if len(x_data) == 0:
+            continue
+        idx    = int(np.abs(x_data - target_x).argmin())
+        snap_x = float(x_data[idx])
+        snap_y = float(y_data[idx])
+        closest_idx = idx
+        y_values_at_x.append(snap_y)
+
+        if i < len(tracker_dots):
+            tracker_dots[i].set_data([snap_x], [snap_y])
+            tracker_dots[i].set_color(line.get_color())
+            tracker_dots[i].set_visible(True)
+
+        y_dist = abs(snap_y - event.ydata)
+        if y_dist < best_y_dist:
+            best_y_dist      = y_dist
+            active_snap_line = line
+
+    for j in range(len(visible_lines), len(tracker_dots)):
+        tracker_dots[j].set_visible(False)
+
+    if len(y_values_at_x) >= 2 and snap_x is not None:
+        connecting_line.set_data([snap_x, snap_x],
+                                  [min(y_values_at_x), max(y_values_at_x)])
+        connecting_line.set_visible(True)
+    else:
+        connecting_line.set_visible(False)
+
+    # Blit: restore clean background, draw only the overlay artists
+    canvas.restore_region(_hover_bg)
+    for dot in tracker_dots:
+        ax.draw_artist(dot)
+    ax.draw_artist(connecting_line)
+    canvas.blit(fig.bbox)
+
+    # Update coordinate readout (cheap — just a tk StringVar)
+    raw_xlbl  = ax.get_xlabel() or plot_attrs.get("xlabel") or "X"
+    raw_ylbl  = ax.get_ylabel() or plot_attrs.get("ylabel") or "Y"
+    clean_x   = str(raw_xlbl).strip() or "X"
+    clean_y   = str(raw_ylbl).strip() or "Y"
+    pt_str    = str(closest_idx) if closest_idx is not None else "--"
+    coord_var.set(f"{clean_x}: {event.xdata:.2f} | {clean_y}: {event.ydata:.4f} | Pt: {pt_str}")
+
+def _refresh_hover_bg():
+    """Full redraw + recapture blit background. Call after view changes settle."""
+    global _hover_bg, _hover_bg_timer
+    _hover_bg_timer = None
+
+    # Save current dot/connector positions, clear for clean draw
+    saved_dots = [(list(d.get_xdata()), list(d.get_ydata())) for d in tracker_dots]
+    saved_conn = (list(connecting_line.get_xdata()), list(connecting_line.get_ydata())) \
+                 if connecting_line is not None else ([], [])
+    for dot in tracker_dots:
+        dot.set_data([], [])
+    if connecting_line is not None:
+        connecting_line.set_data([], [])
+
+    _apply_plot_attrs()
+    canvas.draw()
+    _hover_bg = canvas.copy_from_bbox(fig.bbox)
+
+    # Restore positions and re-blit so dots stay visible after zoom
+    for dot, (xd, yd) in zip(tracker_dots, saved_dots):
+        dot.set_data(xd, yd)
+    if connecting_line is not None:
+        connecting_line.set_data(*saved_conn)
+
+    if any(len(d.get_xdata()) > 0 for d in tracker_dots):
+        canvas.restore_region(_hover_bg)
         for dot in tracker_dots:
-            dot.set_visible(False)
+            ax.draw_artist(dot)
+        if connecting_line is not None and len(connecting_line.get_xdata()) > 0:
+            ax.draw_artist(connecting_line)
+        canvas.blit(fig.bbox)
 
-    # 2. Panning / Dragging
-    if not is_dragging or event.inaxes != ax:
-        canvas.draw_idle()
-        return
-    if event.x is None or event.y is None:
-        return
-        
-    dx, dy = event.x - press_x, event.y - press_y
-    press_x, press_y = event.x, event.y
-    cur_xlim = ax.get_xlim()
-    cur_ylim = ax.get_ylim()
-    bbox = ax.get_window_extent()
-    
-    shift_x = (dx / bbox.width) * (cur_xlim[1] - cur_xlim[0])
-    shift_y = (dy / bbox.height) * (cur_ylim[1] - cur_ylim[0])
-    
-    ax.set_xlim(cur_xlim[0] - shift_x, cur_xlim[1] - shift_x)
-    ax.set_ylim(cur_ylim[0] - shift_y, cur_ylim[1] - shift_y)
-    canvas.draw_idle()
-
-    # -----------------------------------------------------------------------
-    # 2. Maintain Existing Panning/Dragging Logic
-    # -----------------------------------------------------------------------
-    if not is_dragging or event.inaxes != ax:
-        canvas.draw_idle()
-        return
-    if event.x is None or event.y is None:
-        return
-        
-    dx, dy = event.x - press_x, event.y - press_y
-    press_x, press_y = event.x, event.y
-    cur_xlim = ax.get_xlim()
-    cur_ylim = ax.get_ylim()
-    bbox = ax.get_window_extent()
-    
-    shift_x = (dx / bbox.width) * (cur_xlim[1] - cur_xlim[0])
-    shift_y = (dy / bbox.height) * (cur_ylim[1] - cur_ylim[0])
-    
-    ax.set_xlim(cur_xlim[0] - shift_x, cur_xlim[1] - shift_x)
-    ax.set_ylim(cur_ylim[0] - shift_y, cur_ylim[1] - shift_y)
-    canvas.draw_idle()
+def _schedule_hover_bg_refresh(delay_ms=150):
+    """Debounced background recapture — coalesces rapid scroll/zoom events."""
+    global _hover_bg_timer
+    if _hover_bg_timer is not None:
+        root.after_cancel(_hover_bg_timer)
+    _hover_bg_timer = root.after(delay_ms, _refresh_hover_bg)
 
 def on_release(event):
-    global is_dragging
-    is_dragging = False
+    global is_dragging, slope_clicks
+    was_dragging = is_dragging
+    is_dragging  = False
+    if was_dragging:
+        _refresh_hover_bg()   # pan finished — recapture clean background
+
+    # Curve Fit: only register a click if the mouse barely moved (not a drag/zoom)
+    if (plot_type_var.get() == "Curve Fit"
+            and event.button == 1
+            and event.inaxes == ax
+            and event.xdata is not None):
+
+        dx = abs(event.x - press_x) if press_x is not None else 999
+        dy = abs(event.y - press_y) if press_y is not None else 999
+        if dx > 5 or dy > 5:
+            return   # was a drag (rect-select / pan) — ignore
+
+        try:
+            snap_line = active_snap_line
+            if snap_line is None:
+                all_lines = ax.get_lines()
+                for line in all_lines:
+                    label = str(line.get_label()).lower()
+                    if 'mean' in label or 'average' in label or 'avg' in label:
+                        snap_line = line
+                        break
+                if snap_line is None:
+                    valid = [l for l in all_lines if len(l.get_xdata()) > 2
+                             and l.get_linewidth() >= 1.5]
+                    snap_line = valid[-1] if valid else None
+
+            if snap_line is None:
+                show_error("No active data trace found to analyze.")
+                return
+
+            x_data      = snap_line.get_xdata()
+            nearest_idx = int(np.abs(x_data - event.xdata).argmin())
+            slope_clicks.append((nearest_idx, event.xdata))
+            show_window_toast(f"📍 Point {len(slope_clicks)}: {event.xdata:.2f}s")
+
+            if len(slope_clicks) == 2:
+                launch_curve_fit(snap_line, slope_clicks[0], slope_clicks[1])
+                slope_clicks.clear()
+        except Exception as e:
+            show_error(f"Curve fit capture failed: {str(e)}")
+            slope_clicks.clear()
 
 def zoom_factory(ax, base_scale=1.2):
     def zoom_fun(event):
@@ -584,6 +830,7 @@ def zoom_factory(ax, base_scale=1.2):
             ax.set_xlim([event.xdata - new_width * (1 - rel_x), event.xdata + new_width * rel_x])
             ax.set_ylim([event.ydata - new_height * (1 - rel_y), event.ydata + new_height * rel_y])
         canvas.draw_idle()
+        _schedule_hover_bg_refresh()
     return zoom_fun
 
 
@@ -624,130 +871,297 @@ def export_figure_to_file(fig_obj, default_prefix, tracking_info=""):
         except Exception as e:
             show_error(f"Export Failed: {str(e)}")
 
-def launch_slope_analysis(source_line, p1_tuple, p2_tuple):
+def launch_curve_fit(source_line, p1_tuple, p2_tuple):
     """
-    Renders an isolated popout window featuring data computations derived explicitly
-    for all major average/mean traces present on the main canvas.
+    Curve fitting popup — two single-clicks define the window.
+    Choose any model from the registry dropdown; results update on every Fit click.
+
+    ── HOW TO ADD A NEW MODEL ──────────────────────────────────────────────────
+    Edit CURVE_FIT_MODELS below.  Each entry:
+        "Display Name": (model_fn, p0_fn, ["param1", "param2", ...])
+    where
+        model_fn  – a function f(x, *params) -> y  (defined in models.py)
+        p0_fn     – a function f(x_seg, y_seg) -> list of initial guesses
+        param list– human-readable name for every parameter, in order
+    ────────────────────────────────────────────────────────────────────────────
     """
-    from matplotlib.figure import Figure
-    global active_snap_line
+    import PhysicsLibrary.models as _models
+
+    # =========================================================================
+    # CURVE FIT MODEL REGISTRY
+    # Add / remove / reorder entries here — nothing else needs to change.
+    # =========================================================================
+    CURVE_FIT_MODELS = {
+        "Linear  (y = mx + b)": (
+            _models.linear_model,
+            lambda x, y: [(y[-1]-y[0])/(x[-1]-x[0]) if (x[-1]-x[0]) != 0 else 0, y[0]],
+            ["m (slope)", "b (intercept)"],
+        ),
+        "Exponential Decay  (a·e^(-bx) + c)": (
+            _models.single_exponential_model,
+            lambda x, y: [y.max()-y.min(), 0.1, y.min()],
+            ["a (amplitude)", "b (decay rate)", "c (offset)"],
+        ),
+        "Exponential Rise  (a·(1-e^(-bx)) + c)": (
+            _models.exponential_rise_model,
+            lambda x, y: [y.max()-y.min(), 0.1, y.min()],
+            ["a (amplitude)", "b (rise rate)", "c (offset)"],
+        ),
+        "Gaussian  (a·exp(-(x-μ)²/2σ²))": (
+            _models.gaussian_model,
+            lambda x, y: [y.max(), x[y.argmax()], (x[-1]-x[0])/4],
+            ["a (amplitude)", "μ (centre)", "σ (width)"],
+        ),
+        "Sinusoidal  (a·sin(2πfx + φ) + c)": (
+            _models.sinusoidal_model,
+            lambda x, y: [(y.max()-y.min())/2, 1.0, 0.0, y.mean()],
+            ["a (amplitude)", "f (frequency Hz)", "φ (phase)", "c (offset)"],
+        ),
+        "Double Exponential  (a·e^(-bx) + c·e^(-dx) + k)": (
+            _models.double_exponential_model,
+            lambda x, y: [y.max()*0.6, 0.05, y.max()*0.4, 0.001, y.min()],
+            ["a", "b (fast rate)", "c", "d (slow rate)", "k (offset)"],
+        ),
+    }
+    # =========================================================================
 
     p1_idx = p1_tuple[0]
     p2_idx = p2_tuple[0]
-    
+    i1, i2 = sorted([p1_idx, p2_idx])
+
+    raw_xlbl = ax.get_xlabel() or plot_attrs.get("xlabel") or ""
+    raw_ylbl = ax.get_ylabel() or plot_attrs.get("ylabel") or ""
+    clean_xlbl = str(raw_xlbl).replace(" (s)", "").replace("(s)", "").strip() or "Time"
+    clean_ylbl = str(raw_ylbl).strip() or "Signal"
+
+    # Build channel data from cache
+    x_data = cache['x']
+    raw_channel_data = {}
+    if 'o2hb' in cache and 'hhb' in cache:
+        raw_channel_data['Mean O₂Hb'] = {
+            'y':     cache['o2hb'].mean(axis=0) if cache['o2hb'].ndim > 1 else cache['o2hb'],
+            'color': '#CC0000',
+        }
+        raw_channel_data['Mean HHb'] = {
+            'y':     cache['hhb'].mean(axis=0) if cache['hhb'].ndim > 1 else cache['hhb'],
+            'color': '#0033CC',
+        }
+        if 'thb' in cache:
+            raw_channel_data['Mean tHb'] = {
+                'y':     cache['thb'].mean(axis=0) if cache['thb'].ndim > 1 else cache['thb'],
+                'color': '#228B22',
+            }
+    else:
+        sig = cache.get('corr', cache.get('raw'))
+        lbl = 'ΔF/F (corrected)' if 'corr' in cache else 'Raw signal'
+        raw_channel_data[lbl] = {'y': sig, 'color': '#2196F3'}
+
     pop = tk.Toplevel(root)
-    pop.title("Slope Analysis Dashboard — ΔY/ΔX")
-    pop.geometry("640x620")  # Expanded slightly to fit multiple metrics readouts comfortably
-    pop.minsize(520, 500)
+    pop.title("Curve Fit")
+    pop.geometry("720x680")
+    pop.minsize(580, 800)
+
+    # ── Control row: model dropdown + recalculate button + window entry ─────
+    ctrl = tk.Frame(pop)
+    ctrl.pack(fill="x", padx=12, pady=(10, 4))
+
+    tk.Label(ctrl, text="Model:", font=('Helvetica', 10, 'bold')).pack(side="left", padx=(0, 4))
+    model_var = tk.StringVar(value=list(CURVE_FIT_MODELS.keys())[0])
+    model_menu = tk.OptionMenu(ctrl, model_var, *CURVE_FIT_MODELS.keys())
+    model_menu.config(width=36)
+    model_menu.pack(side="left", padx=(0, 8))
+
+    recalc_btn = tk.Button(ctrl, text="▶ Recalculate Fit", command=lambda: _run_fit(),
+                           bg="#4CAF50", fg="white",
+                           font=('Helvetica', 9, 'bold'), padx=10)
+    recalc_btn.pack(side="left", padx=(0, 16))
     
-    # --- BULLETPROOF LABEL PARSER ---
-    raw_xlbl = ax.get_xlabel() if ax.get_xlabel() else plot_attrs.get("xlabel")
-    raw_ylbl = ax.get_ylabel() if ax.get_ylabel() else plot_attrs.get("ylabel")
-    
-    if raw_xlbl is None or str(raw_xlbl) == "None" or str(raw_xlbl).strip() == "":
-        clean_xlbl = "Time"
-    else:
-        clean_xlbl = str(raw_xlbl).replace(" (s)", "").replace("(s)", "").strip()
-        
-    if raw_ylbl is None or str(raw_ylbl) == "None" or str(raw_ylbl).strip() == "":
-        clean_ylbl = "Signal"
-    else:
-        clean_ylbl = str(raw_ylbl).strip()
-    
-    # --- METRICS TEXT HEADER CONTAINER ---
+    # 2. Bind the Enter key to the popup window ('pop') using the correct variable name
+    pop.bind("<Return>", lambda event: recalc_btn.invoke())
+
+    tk.Label(ctrl, text="Window (s):", font=('Helvetica', 9)).pack(side="left", padx=(0, 4))
+    win_entry = tk.Entry(ctrl, width=5)
+    win_entry.insert(0, str(int(_get_window())))
+    win_entry.pack(side="left")
+
+    # ── Metrics readout ─────────────────────────────────────────────────────
     info_frame = tk.Frame(pop, bg="#ffffff", bd=1, relief="groove")
-    info_frame.pack(side="top", fill="x", padx=12, pady=12)
-    
-    # Define your main group targets 
-    target_labels = ['Mean O₂Hb', 'Mean HHb', 'ΔF/F (corrected)', 'Raw signal']
-    
-    # Separate your core averages from the underlying thin trials
-    all_lines = ax.get_lines()
-    major_lines = [l for l in all_lines if l.get_label() in target_labels]
-    
-    # Fallback: if no labels match exactly, treat any robust trace as a main line
-    if not major_lines:
-        major_lines = [l for l in all_lines if len(l.get_xdata()) > 2 and not str(l.get_label()).startswith('_')]
+    info_frame.pack(fill="x", padx=12, pady=4)
+    result_lbl = tk.Label(info_frame, text="Results will appear here after fitting.",
+                          font=("Consolas", 9), justify="left",
+                          bg="#ffffff", padx=10, pady=8, anchor="w")
+    result_lbl.pack(fill="x")
 
-    # Run the slope calculations loop for EVERY single major average line found
-    metrics_strings = []
-    calculation_results = {} # Store results to use down in the plot section
-    
-    for line in major_lines:
-        l_name = line.get_label() if line.get_label() else "Data Trace"
-        full_x = line.get_xdata()
-        full_y = line.get_ydata()
-        
-        # Calculate individual slope metrics for this specific line
-        res = pl.compute_slope_segment(full_x, full_y, p1_idx, p2_idx)
-        calculation_results[line] = res
-        
-        # Format string tracking for this line
-        line_summary = (
-            f"📈 【{l_name}】\n"
-            f"   P1: ({res['x1']:.2f}s, {res['y1']:.4f}) | P2: ({res['x2']:.2f}s, {res['y2']:.4f})\n"
-            f"   Δ {clean_xlbl}: {res['x2'] - res['x1']:.3f} s | Δ {clean_ylbl}: {res['y2'] - res['y1']:.5f}\n"
-            f"   Calculated Slope (m): {res['slope']:.6f}\n"
-        )
-        metrics_strings.append(line_summary)
-    
-    # Combine all individual line readouts with a clean dividing boundary
-    divider = "—" * 65 + "\n"
-    metrics_text = divider.join(metrics_strings)
-    
-    lbl = tk.Label(info_frame, text=metrics_text, font=("Consolas", 9), 
-                   justify="left", bg="#ffffff", padx=10, pady=10)
-    lbl.pack(anchor="w")
-    
-    # --- SUBPLOT RENDERING DESIGN ---
-    sub_fig = Figure(figsize=(5.5, 3.5), dpi=100)
-    sub_ax = sub_fig.add_subplot(111)
-    
-    # Reference limits from whatever trace calculation finished last to determine the view window boundary
-    last_res = list(calculation_results.values())[-1]
-    x_min, x_max = min(last_res['crop_x']), max(last_res['crop_x'])
-    
-    # Plot all overlay curves (both pale trials and thick averages)
-    for line in all_lines:
-        if len(line.get_xdata()) <= 2 or str(line.get_label()).startswith('_'):
-            continue
-            
-        l_x = line.get_xdata()
-        l_y = line.get_ydata()
-        
-        mask = (l_x >= x_min) & (l_x <= x_max)
-        crop_lx = l_x[mask]
-        crop_ly = l_y[mask]
-        
-        if len(crop_lx) > 0:
-            if line in major_lines:
-                # This is an average line! Draw it thick
-                res = calculation_results[line]
-                sub_ax.plot(crop_lx, crop_ly, color=line.get_color(), lw=2.5, zorder=4, label=line.get_label())
-                
-                # Draw the specific slope projection dashed vector and target rings for each average line
-                sub_ax.plot([res['x1'], res['x2']], [res['y1'], res['y2']], 'o', color=line.get_color(), markersize=6, zorder=5)
-                sub_ax.plot([res['x1'], res['x2']], [res['y1'], res['y2']], '--', color='black', lw=1.2, alpha=0.7, zorder=4)
+    # ── Plot area ───────────────────────────────────────────────────────────
+    pf = tk.Frame(pop)
+    pf.pack(fill="both", expand=True, padx=12, pady=4)
+    sub_fig    = Figure(figsize=(6, 3.5), dpi=100)
+    sub_ax     = sub_fig.add_subplot(111)
+    sub_canvas = FigureCanvasTkAgg(sub_fig, master=pf)
+    sub_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    def _run_fit():
+        model_name              = model_var.get()
+        model_fn, p0_fn, pnames = CURVE_FIT_MODELS[model_name]
+        is_linear               = model_name.startswith("Linear")
+
+        # Window context from the popup's own entry
+        try:
+            win_sec = max(1.0, float(win_entry.get()))
+        except ValueError:
+            win_sec = 30.0
+        half_win = win_sec / 2
+
+        t1    = float(x_data[i1])
+        t2    = float(x_data[i2])
+        t_mid = (t1 + t2) / 2
+
+        # Clamp window to data bounds
+        view_start = max(float(x_data[0]),  t_mid - half_win)
+        view_end   = min(float(x_data[-1]), t_mid + half_win)
+        # Ensure the selected segment is always fully visible
+        view_start = min(view_start, t1)
+        view_end   = max(view_end,   t2)
+
+        w_start = int(np.searchsorted(x_data, view_start))
+        w_end   = int(np.searchsorted(x_data, view_end))
+        w_end   = min(w_end, len(x_data) - 1)
+
+        sub_ax.clear()
+        lines_text = []
+        fit_rows   = []
+
+        for lname, cfg in raw_channel_data.items():
+            y_full = cfg['y']
+            color  = cfg['color']
+
+            x_seg = x_data[i1:i2+1]
+            y_seg = y_full[i1:i2+1]
+
+            if len(x_seg) < 4:
+                continue
+
+            delta_x = t2 - t1
+            delta_y = float(y_seg[-1] - y_seg[0])
+
+            # Context window — full faded trace
+            sub_ax.plot(x_data[w_start:w_end+1], y_full[w_start:w_end+1],
+                        color=color, lw=1.0, alpha=0.3)
+            # Selected segment — bright
+            sub_ax.plot(x_seg, y_seg, color=color, lw=2.0,
+                        label=f"{lname}")
+
+            res = pl.fit_model_to_segment(x_seg, y_seg, model_fn, p0_fn)
+
+            header = (
+                f"【{lname}】\n"
+                f"   P1: ({t1:.2f}s, {float(y_seg[0]):.4f})"
+                f"  |  P2: ({t2:.2f}s, {float(y_seg[-1]):.4f})\n"
+                f"   Δ{clean_xlbl}: {delta_x:.3f} s"
+                f"  |  Δ{clean_ylbl}: {delta_y:.5f}\n"
+            )
+
+            if res["success"]:
+                param_str = "   ".join(
+                    f"{n} = {v:.4g}" for n, v in zip(pnames, res["popt"])
+                )
+                entry = header + f"   {param_str}\n   R² = {res['r2']:.4f}"
+                sub_ax.plot(x_seg, res["y_fit"], color=color, lw=2.5,
+                            linestyle='--',
+                            label=f"{lname} fit  R²={res['r2']:.3f}")
+                if is_linear:
+                    sub_ax.plot([t1, t2], [float(y_seg[0]), float(y_seg[-1])],
+                                'o', color=color, markersize=6, zorder=5)
+                fit_rows.append({
+                    "channel":      lname,
+                    "model":        model_name,
+                    "param_names":  pnames,
+                    "param_values": list(res["popt"]),
+                    "r2":           res["r2"],
+                    "t1":           t1,
+                    "t2":           t2,
+                })
             else:
-                # This is a raw trial swipe! Keep it pale and transparent in the background
-                sub_ax.plot(crop_lx, crop_ly, color=line.get_color(), lw=0.7, alpha=0.25, zorder=2)
+                entry = header + f"   ⚠ Fit failed: {res['error']}"
 
-    sub_ax.set_xlabel(f"{clean_xlbl} (s)", fontweight='bold')
-    sub_ax.set_ylabel(clean_ylbl, fontweight='bold')
-    sub_ax.grid(True, linestyle=':', alpha=0.6)
-    sub_ax.legend(loc='upper right', fontsize=8)
-    sub_ax.set_title("Localized Slope Linear Projection Window", fontsize=10, fontweight='bold')
-    sub_fig.tight_layout()
-    
-    sub_canvas = FigureCanvasTkAgg(sub_fig, master=pop)
-    sub_canvas.get_tk_widget().pack(side="top", fill="both", expand=True, padx=12, pady=5)
-    sub_canvas.draw()
-    
+            lines_text.append(entry)
+
+        # Shade the fit region and mark endpoints
+        sub_ax.axvspan(t1, t2, alpha=0.10, color='gold', zorder=0)
+        sub_ax.axvline(t1, color='gray', lw=1.0, linestyle='--', alpha=0.6)
+        sub_ax.axvline(t2, color='gray', lw=1.0, linestyle='--', alpha=0.6)
+
+        sub_ax.set_xlabel(f"{clean_xlbl} (s)", fontweight='bold')
+        sub_ax.set_ylabel(clean_ylbl, fontweight='bold')
+        sub_ax.legend(fontsize=7, loc='best')
+        sub_ax.set_title(f"Curve Fit — {model_name.split('(')[0].strip()}",
+                         fontweight='bold', fontsize=10)
+        sub_ax.grid(True, linestyle=':', alpha=0.5)
+        sub_fig.tight_layout()
+        # Set xlim AFTER tight_layout so it isn't overridden
+        sub_ax.set_xlim(view_start, view_end)
+        sub_canvas.draw()
+
+        divider = chr(10) + "—" * 60 + chr(10)
+        result_lbl.config(text=divider.join(lines_text) or "No data found.")
+        last_fit_results[:] = fit_rows   # expose for export buttons
+
+    # ── Bottom buttons ───────────────────────────────────────────────────────
+    last_fit_results = []   # filled by _run_fit: list of dicts per channel
+
+    def _copy_params():
+        txt = result_lbl.cget("text")
+        if not txt or txt == "Results will appear here after fitting.":
+            return
+        pop.clipboard_clear()
+        pop.clipboard_append(txt)
+        show_window_toast("📋 Parameters copied to clipboard")
+
+    def _export_csv():
+        if not last_fit_results:
+            show_error("Run the fit first.")
+            return
+        import csv as _csv, datetime as _dt
+        ts   = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV", "*.csv"), ("Text", "*.txt")],
+            initialfile=f"CurveFit_{ts}.csv",
+            title="Export fit parameters",
+            parent=pop,
+        )
+        if not path:
+            return
+        with open(path, 'w', newline='', encoding='utf-8') as fh:
+            writer = _csv.writer(fh)
+            writer.writerow(["Channel", "Model", "Parameter", "Value", "R²",
+                             "t1 (s)", "t2 (s)", "Δt (s)"])
+            for row in last_fit_results:
+                for pname, pval in zip(row["param_names"], row["param_values"]):
+                    writer.writerow([row["channel"], row["model"], pname,
+                                     f"{pval:.6g}", f"{row['r2']:.4f}",
+                                     f"{row['t1']:.4f}", f"{row['t2']:.4f}",
+                                     f"{row['t2']-row['t1']:.4f}"])
+        show_window_toast(f"✅ Saved {os.path.basename(path)}")
+
     btn_frame = tk.Frame(pop)
-    btn_frame.pack(side="bottom", fill="x", pady=10)
-    tk.Button(btn_frame, text="💾 Export Multi-Slope Analysis",
-              command=lambda: export_figure_to_file(sub_fig, "MultiSlope", f"{int(last_res['x1'])}s_{int(last_res['x2'])}s"),
-              bg="#2196F3", fg="white", font=('Helvetica', 10, 'bold'), padx=20).pack()
+    btn_frame.pack(fill="x", pady=8, padx=12)
+    tk.Button(btn_frame, text="📋 Copy",
+              command=_copy_params,
+              bg="#e1e1e1",
+              font=('Helvetica', 10, 'bold'), padx=14).pack(side="left", padx=4)
+    tk.Button(btn_frame, text="📄 Export CSV",
+              command=_export_csv,
+              bg="#e1e1e1",
+              font=('Helvetica', 10, 'bold'), padx=14).pack(side="left", padx=4)
+    tk.Button(btn_frame, text="🖼 Export Plot",
+              command=lambda: export_figure_to_file(sub_fig, "CurveFit"),
+              bg="#2196F3", fg="white",
+              font=('Helvetica', 10, 'bold'), padx=14).pack(side="left", padx=4)
+    tk.Button(btn_frame, text="Close", command=pop.destroy,
+              bg="#e1e1e1", font=('Helvetica', 10, 'bold'), padx=14).pack(side="left", padx=4)
+
+    _run_fit()
 
 
 def launch_zscore_peth(center_t):
@@ -881,8 +1295,8 @@ def analysis_type(clicked_x):
         launch_fft(center_timestamp)
     elif current_mode == "Z-Score PETH" or current_mode == "PETH":
         launch_zscore_peth(center_timestamp)
-    elif current_mode == "Slope":
-        show_window_toast("ℹ️ In Slope Mode: Use single-clicks to anchor points instead of double-clicking.")
+    elif current_mode == "Curve Fit":
+        show_window_toast("ℹ️ In Curve Fit Mode: Use single-clicks to anchor two points.")
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
@@ -896,7 +1310,7 @@ def _update_plot_with_notes(markers):
         unique_labels.add(m['label'])
         ax.axvline(x=m['time'], color=m['color'], linestyle='--', alpha=0.6, label=label_id)
         ax.text(m['time'], 0.98, f" {m['label']}", transform=trans,
-                rotation=90, va='top', clip_on=True, fontsize=8,
+                rotation=90, va='top', clip_on=True, fontsize=m.get('fontsize', 8),
                 color=m['color'], fontweight='bold',
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
 
@@ -945,7 +1359,7 @@ def _apply_plot_attrs():
 
 
 def simple_plot(draw_now=True):
-    global tracker_dots, connecting_line # Make these accessible to on_motion
+    global tracker_dots, connecting_line, _hover_bg
     
     if cache is None:
         return
@@ -958,42 +1372,69 @@ def simple_plot(draw_now=True):
         hhb  = cache['hhb']
         for i in range(o2hb.shape[0]):
             ax.plot(x, o2hb[i], color='#FF9999', lw=0.8, alpha=0.5,
-                    label='O₂Hb channels' if i == 0 else '_')
+                    label='O₂Hb channels' if i == 0 else '_nolegend_')
             ax.plot(x, hhb[i],  color='#99BBFF', lw=0.8, alpha=0.5,
-                    label='HHb channels'  if i == 0 else '_')
-        ax.plot(x, o2hb.mean(axis=0), color='#CC0000', lw=2.0, label='Mean O₂Hb')
-        ax.plot(x, hhb.mean(axis=0),  color='#0033CC', lw=2.0, label='Mean HHb')
+                    label='HHb channels'  if i == 0 else '_nolegend_')
+        ff = cache.get('fit_factor_mean')
+        ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
+        ax.plot(x, o2hb.mean(axis=0), color='#CC0000', lw=2.0, label=f'Mean O₂Hb{ff_tag}')
+        ax.plot(x, hhb.mean(axis=0),  color='#0033CC', lw=2.0, label=f'Mean HHb{ff_tag}')
+        if 'thb' in cache:
+            thb = cache['thb']
+            ax.plot(x, thb.mean(axis=0), color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
         ax.set_ylabel("Δ Concentration (μM)", fontweight='bold')
         ax.set_title(f"NIRS — {cache['store']}", fontweight='bold', pad=15)
+        x_label = "Time (s)"
+    elif cache.get('source') == 'Generic':
+        x = cache['x']
+        _GEN_COLORS = ['#CC0000', '#0033CC', '#228B22', '#CC6600',
+                       '#6600CC', '#008888', '#AA0055', '#005588']
+        for i, (col_name, y) in enumerate(cache['y_columns'].items()):
+            mask = ~np.isnan(y)
+            ax.plot(x[mask], y[mask], 'o-', lw=1.8, markersize=4,
+                    color=_GEN_COLORS[i % len(_GEN_COLORS)], label=col_name)
+        ax.set_ylabel("Value", fontweight='bold')
+        ax.set_title(cache['store'], fontweight='bold', pad=15)
+        x_label = cache.get('x_label', 'X')
     else:
         data_to_plot = cache['corr'] if show_corrected else cache['raw']
         color_choice = 'blue' if show_corrected else 'gray'
         label_text   = 'ΔF/F (corrected)' if show_corrected else 'Raw signal'
         ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
         ax.plot(cache['x'], data_to_plot, color=color_choice,
-                lw=1, alpha=0.8, label=label_text)
+                lw=1.5, alpha=0.8, label=label_text)
         ax.set_ylabel("Amplitude", fontweight='bold')
         ax.set_title(f"{label_text} — {cache['store']}", fontweight='bold', pad=15)
+        x_label = "Time (s)"
 
     _update_plot_with_notes(cache['markers'])
-    ax.set_xlabel("Time (s)", fontweight='bold')
+    ax.set_xlabel(x_label, fontweight='bold')
     ax.legend(loc='upper left', fontsize=8)
     ax.set_xlim(cache['x'][0], cache['x'][-1])
     _apply_plot_attrs()
-    
-    # ---------------------------------------------------------------------------
-    # Re-initialize Hover Elements (Ensures they survive ax.clear())
-    # ---------------------------------------------------------------------------
+
+    # Grid
+    if show_grid:
+        ax.grid(True, linestyle=':', alpha=0.4, color='gray')
+
+    # ── Hover tracker dots — one per snappable line ─────────────────────────
+    _snap_lines = [
+        l for l in ax.get_lines()
+        if not str(l.get_label()).startswith('_')
+        and len(l.get_xdata()) > 2
+        and l.get_linewidth() >= 1.5
+    ]
     tracker_dots = []
-    # We only need 2 tracking dots now for the primary thick lines
-    for _ in range(2):  
-        dot, = ax.plot([], [], 'o', markersize=6, animated=False, zorder=5)
+    for _ in _snap_lines:
+        dot, = ax.plot([], [], 'o', markersize=8, zorder=5, animated=True)
         tracker_dots.append(dot)
-        
-    connecting_line, = ax.plot([], [], ':', color='gray', linewidth=1.0, alpha=0.7, zorder=4)
+
+    connecting_line, = ax.plot([], [], ':', color='gray', lw=1.0, alpha=0.7,
+                               label='_connector', zorder=4, animated=True)
 
     if draw_now:
         canvas.draw()
+        _hover_bg = canvas.copy_from_bbox(fig.bbox)
 
 def reset_zoom():
     if cache is None:
@@ -1143,17 +1584,22 @@ def open_attributes_window():
             ]
 
         _apply_plot_attrs()
-        canvas.draw_idle()
+        _refresh_hover_bg()
         win.destroy()
 
     btn_row = tk.Frame(win)
     btn_row.grid(row=2, column=0, columnspan=2, pady=10)
 
-    tk.Button(btn_row, text="Apply", command=_apply,
+    recalc_btn = tk.Button(btn_row, text="Apply", command=_apply,
               bg="#4CAF50", fg="white",
               font=('Helvetica', 9, 'bold'),
-              padx=20).pack(side="left", padx=5)
+              padx=20)
 
+    recalc_btn.pack(side="left", padx=5)
+
+
+    win.bind("<Return>", lambda event: recalc_btn.invoke())
+    
     tk.Button(btn_row, text="Cancel", command=win.destroy,
               bg="#e1e1e1",
               font=('Helvetica', 9, 'bold'),
@@ -1175,14 +1621,16 @@ root.state('zoomed')
 options_frame = tk.LabelFrame(root, text="Controls & Analysis")
 options_frame.pack(pady=10, padx=10, fill="x")
 
-# --- Open buttons ---
-tk.Button(options_frame, text="📁 Open Folder",
-          command=open_folder, bg="#e1e1e1",
-          font=('Helvetica', 9, 'bold')).pack(side="left", padx=(10, 2), pady=10)
-
-tk.Button(options_frame, text="📄 Open File",
-          command=open_file, bg="#e1e1e1",
-          font=('Helvetica', 9, 'bold')).pack(side="left", padx=(2, 2), pady=10)
+# --- Open dropdown + Reload ---
+open_mb = tk.Menubutton(options_frame, text="📂 Open ▾",
+                         bg="#e1e1e1", font=('Helvetica', 9, 'bold'),
+                         relief="raised", padx=8)
+open_mb.pack(side="left", padx=(10, 2), pady=10)
+open_menu = tk.Menu(open_mb, tearoff=0)
+open_mb.config(menu=open_menu)
+open_menu.add_command(label="Open TDT folder",     command=open_folder)
+open_menu.add_command(label="Open TXT (Oxysoft)",  command=open_file)
+open_menu.add_command(label="Open Excel",          command=launch_generic_file_loader)
 
 tk.Button(options_frame, text="🔄 Reload",
           command=load_data_action, bg="#e1e1e1",
@@ -1190,10 +1638,23 @@ tk.Button(options_frame, text="🔄 Reload",
 
 tk.Label(options_frame, text="|").pack(side="left", padx=5)
 
+# --- Grid toggle ---
+_grid_var = tk.BooleanVar(value=True)
+def _toggle_grid():
+    global show_grid
+    show_grid = _grid_var.get()
+    if cache is not None:
+        simple_plot()
+tk.Checkbutton(options_frame, text="Grid", variable=_grid_var,
+               command=_toggle_grid,
+               font=('Helvetica', 9, 'bold')).pack(side="left", padx=(0, 8))
+
+tk.Label(options_frame, text="|").pack(side="left", padx=5)
+
 # --- Analysis dropdown + window ---
 plot_type_var = tk.StringVar(root)
 plot_type_var.set("Analysis")
-tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH", "FFT", "Slope").pack(side="left", padx=10)
+tk.OptionMenu(options_frame, plot_type_var, "Z-Score PETH", "FFT", "Curve Fit").pack(side="left", padx=10)
 tk.Label(options_frame, text="Window (s):").pack(side="left", padx=(10, 2))
 window_entry = tk.Entry(options_frame, width=5)
 window_entry.insert(0, "30")
@@ -1247,7 +1708,7 @@ fig.canvas.mpl_connect('button_press_event',   on_press)
 fig.canvas.mpl_connect('motion_notify_event',  on_motion)
 fig.canvas.mpl_connect('button_release_event', on_release)
 
-f_zoom = zoom_factory(ax, base_scale=1.2)
+f_zoom = zoom_factory(ax, base_scale=1.1)
 fig.canvas.mpl_connect('scroll_event', f_zoom)
 
 global rect_selector
