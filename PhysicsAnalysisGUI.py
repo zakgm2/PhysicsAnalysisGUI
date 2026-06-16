@@ -480,6 +480,117 @@ def launch_generic_file_loader():
 
 
 # ---------------------------------------------------------------------------
+# Terranova / Prospa .pt2 EFNMR image viewer
+# ---------------------------------------------------------------------------
+
+def _parse_pt2(path):
+    """
+    Parse a Terranova Prospa .pt2 2D NMR image file.
+
+    The file is binary.  The reconstructed magnitude image is stored after
+    the 4-byte marker b'LAER' ('REAL' reversed) as little-endian float32
+    values.  Returns a 2D numpy array shaped (n_rows, n_cols).
+    """
+    with open(path, 'rb') as f:
+        raw = f.read()
+
+    pos = raw.find(b'LAER')
+    if pos == -1:
+        raise ValueError("Not a recognised .pt2 file — LAER image marker not found.")
+    pos += 4
+
+    arr = np.frombuffer(raw[pos:], dtype='<f4').copy()
+    n_total = len(arr)
+
+    # Try common square NMR image sizes (powers of two, small to large)
+    for n in [16, 32, 64, 128, 256]:
+        if n_total == n * n and np.isfinite(arr).all() and arr.max() > 0:
+            return arr.reshape(n, n)
+
+    # Fallback: if total count is a perfect square, use that
+    sq = int(np.sqrt(n_total))
+    if sq * sq == n_total and np.isfinite(arr).all() and arr.max() > 0:
+        return arr.reshape(sq, sq)
+
+    raise ValueError(f"Could not determine image dimensions ({n_total} floats after LAER).")
+
+
+def launch_pt2_viewer():
+    """Open and display a Terranova EFNMR .pt2 2D image in a new window."""
+    path = filedialog.askopenfilename(
+        title="Open EFNMR / MRI Image (.pt2)",
+        filetypes=[("Prospa 2D image", "*.pt2"), ("All files", "*.*")]
+    )
+    if not path:
+        return
+
+    try:
+        img = _parse_pt2(path)
+    except Exception as e:
+        show_error(str(e))
+        return
+
+    win = tk.Toplevel(root)
+    win.title(f"EFNMR Image — {os.path.basename(path)}")
+    win.resizable(True, True)
+
+    # ── Toolbar ────────────────────────────────────────────────────────────
+    tb = tk.Frame(win, bg="#e1e1e1")
+    tb.pack(side="top", fill="x", padx=4, pady=4)
+
+    tk.Label(tb, text="Colormap:", bg="#e1e1e1").pack(side="left", padx=(4, 2))
+    cmap_var = tk.StringVar(value="gray")
+    tk.OptionMenu(tb, cmap_var, "gray", "hot", "viridis", "plasma", "bone", "inferno").pack(side="left")
+
+    tk.Label(tb, text="Title:", bg="#e1e1e1").pack(side="left", padx=(12, 2))
+    default_title = os.path.splitext(os.path.basename(path))[0]
+    title_var = tk.StringVar(value=default_title)
+    title_entry = tk.Entry(tb, textvariable=title_var, width=28)
+    title_entry.pack(side="left")
+
+    def _update_title(*_):
+        ax2.set_title(title_var.get(), fontsize=11, fontweight='bold')
+        canvas2.draw_idle()
+
+    title_var.trace_add("write", _update_title)
+
+    # ── Figure ─────────────────────────────────────────────────────────────
+    fig2 = Figure(figsize=(5.5, 5.5), tight_layout=True)
+    ax2  = fig2.add_subplot(111)
+    im   = ax2.imshow(img, cmap="gray", origin="lower", aspect="equal")
+    cbar = fig2.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
+    cbar.set_label("Signal intensity (a.u.)")
+    ax2.set_title(os.path.splitext(os.path.basename(path))[0], fontsize=11, fontweight='bold')
+    ax2.set_xlabel("Z (pixels)")
+    ax2.set_ylabel("Y (pixels)")
+
+    canvas2 = FigureCanvasTkAgg(fig2, master=win)
+    canvas2.draw()
+    canvas2.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=(0, 4))
+
+    def _update_cmap(*_):
+        im.set_cmap(cmap_var.get())
+        canvas2.draw_idle()
+
+    cmap_var.trace_add("write", _update_cmap)
+
+    def _export():
+        ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        name = f"{os.path.splitext(os.path.basename(path))[0]}_{ts}.png"
+        dst  = filedialog.asksaveasfilename(
+            defaultextension=".png",
+            filetypes=[("PNG", "*.png"), ("PDF", "*.pdf"), ("SVG", "*.svg")],
+            initialfile=name, title="Export Image"
+        )
+        if dst:
+            fig2.savefig(dst, dpi=300, bbox_inches='tight')
+            show_window_toast(f"✅ Exported: {os.path.basename(dst)}")
+
+    tk.Button(tb, text="🖼 Export", command=_export,
+              bg="#e1e1e1", font=('Helvetica', 9)).pack(side="right", padx=4)
+
+
+# ---------------------------------------------------------------------------
 # Data loading
 # ---------------------------------------------------------------------------
 
@@ -568,9 +679,14 @@ def _load_single_file(file_path):
 # ---------------------------------------------------------------------------
 
 def on_select(eclick, erelease):
+    # Ignore double-clicks and any drag smaller than 10 px in both axes
+    if eclick.dblclick:
+        return
+    if abs(eclick.x - erelease.x) < 10 or abs(eclick.y - erelease.y) < 10:
+        return
     x1, y1 = eclick.xdata,   eclick.ydata
     x2, y2 = erelease.xdata, erelease.ydata
-    if None in [x1, x2, y1, y2] or abs(x1 - x2) < 0.1:
+    if None in [x1, x2, y1, y2]:
         return
     ax.set_xlim(min(x1, x2), max(x1, x2))
     ax.set_ylim(min(y1, y2), max(y1, y2))
@@ -801,6 +917,7 @@ def on_release(event):
 
 def zoom_factory(ax, base_scale=1.2):
     def zoom_fun(event):
+        global _hover_bg
         if event.x is None or event.y is None:
             return
         bbox         = ax.get_window_extent()
@@ -829,6 +946,7 @@ def zoom_factory(ax, base_scale=1.2):
             rel_y      = (cur_ylim[1] - event.ydata) / (cur_ylim[1] - cur_ylim[0])
             ax.set_xlim([event.xdata - new_width * (1 - rel_x), event.xdata + new_width * rel_x])
             ax.set_ylim([event.ydata - new_height * (1 - rel_y), event.ydata + new_height * rel_y])
+        _hover_bg = None   # invalidate stale background so on_motion doesn't blit it
         canvas.draw_idle()
         _schedule_hover_bg_refresh()
     return zoom_fun
@@ -1631,6 +1749,7 @@ open_mb.config(menu=open_menu)
 open_menu.add_command(label="Open TDT folder",     command=open_folder)
 open_menu.add_command(label="Open TXT (Oxysoft)",  command=open_file)
 open_menu.add_command(label="Open Excel",          command=launch_generic_file_loader)
+open_menu.add_command(label="Open PT2 (EFNMR)",   command=launch_pt2_viewer)
 
 tk.Button(options_frame, text="🔄 Reload",
           command=load_data_action, bg="#e1e1e1",
