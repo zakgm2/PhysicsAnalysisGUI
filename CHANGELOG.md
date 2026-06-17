@@ -2,6 +2,14 @@
 
 ---
 
+## v1.3.0
+**Improvements:**
+- Golden-ratio font sizing: all secondary figure windows (PETH, FFT, PT2 viewer, curve fit) now scale title, axis label, and legend fonts proportionally to the figure diagonal, with each tier related by φ ≈ 1.618.
+- Font sizes apply from first load — no longer require opening Edit Attributes first.
+- Figures with multiple subplots (PETH, Oxysoft FFT) automatically halve font sizes to avoid crowding.
+
+---
+
 ## v1.2.0
 **New features:**
 - Terranova EFNMR `.pt2` image viewer: opens 2D NMR/MRI images in a dedicated window with colormap selector, editable title, and PNG/PDF/SVG export. Supports all square power-of-two image sizes (16×16 through 256×256) with automatic dimension detection.

@@ -34,14 +34,36 @@ _hover_bg_timer  = None   # debounce handle for background recapture
 show_grid        = True
 
 # Persisted plot customisations — survive redraws
+_PHI = 1.6180339887   # golden ratio
+
+def _fig_font_sizes(fig):
+    """
+    Return (title_fs, label_fs, legend_fs) using the golden ratio.
+
+    Title scales linearly with the figure diagonal.
+    Each tier down is title / φ, then title / φ².
+    Anchor: 8×4 in diagonal (≈ 8.94 in) → title ≈ 24 pt.
+    Halved when the figure contains multiple subplots.
+    """
+    diag     = (fig.get_figwidth() ** 2 + fig.get_figheight() ** 2) ** 0.5
+    title_fs = max(8, round(diag * (24 / ((8**2 + 4**2) ** 0.5))))
+    label_fs = max(6, round(title_fs / _PHI))
+    leg_fs   = max(5, round(label_fs / _PHI))
+    if len(fig.axes) > 1:
+        title_fs = max(6, title_fs // 2)
+        label_fs = max(5, label_fs // 2)
+        leg_fs   = max(4, leg_fs   // 2)
+    return title_fs, label_fs, leg_fs
+
+
 plot_attrs = {
     "title":     None,   # str or None = use auto title
     "xlabel":    None,
     "ylabel":    None,
-    "title_fs":  14,
-    "xlabel_fs": 12,
-    "ylabel_fs": 12,
-    "leg_fs":    8,
+    "title_fs":  24,
+    "xlabel_fs": 16,
+    "ylabel_fs": 16,
+    "leg_fs":    14,
     "leg_loc":   "upper left",
     "leg_entries": None,   # list of (label, visible) or None = show all
 }
@@ -100,7 +122,7 @@ def save_markers():
     try:
         with open(path, 'w') as f:
             json.dump(cache['markers'], f, indent=2, default=float)
-        show_success(f"Markers saved")
+        show_success("Markers saved")
     except Exception as e:
         show_error(f"Save failed: {str(e)}")
 
@@ -483,38 +505,6 @@ def launch_generic_file_loader():
 # Terranova / Prospa .pt2 EFNMR image viewer
 # ---------------------------------------------------------------------------
 
-def _parse_pt2(path):
-    """
-    Parse a Terranova Prospa .pt2 2D NMR image file.
-
-    The file is binary.  The reconstructed magnitude image is stored after
-    the 4-byte marker b'LAER' ('REAL' reversed) as little-endian float32
-    values.  Returns a 2D numpy array shaped (n_rows, n_cols).
-    """
-    with open(path, 'rb') as f:
-        raw = f.read()
-
-    pos = raw.find(b'LAER')
-    if pos == -1:
-        raise ValueError("Not a recognised .pt2 file — LAER image marker not found.")
-    pos += 4
-
-    arr = np.frombuffer(raw[pos:], dtype='<f4').copy()
-    n_total = len(arr)
-
-    # Try common square NMR image sizes (powers of two, small to large)
-    for n in [16, 32, 64, 128, 256]:
-        if n_total == n * n and np.isfinite(arr).all() and arr.max() > 0:
-            return arr.reshape(n, n)
-
-    # Fallback: if total count is a perfect square, use that
-    sq = int(np.sqrt(n_total))
-    if sq * sq == n_total and np.isfinite(arr).all() and arr.max() > 0:
-        return arr.reshape(sq, sq)
-
-    raise ValueError(f"Could not determine image dimensions ({n_total} floats after LAER).")
-
-
 def launch_pt2_viewer():
     """Open and display a Terranova EFNMR .pt2 2D image in a new window."""
     path = filedialog.askopenfilename(
@@ -525,7 +515,7 @@ def launch_pt2_viewer():
         return
 
     try:
-        img = _parse_pt2(path)
+        img = pl.load_pt2(path)
     except Exception as e:
         show_error(str(e))
         return
@@ -539,7 +529,7 @@ def launch_pt2_viewer():
     tb.pack(side="top", fill="x", padx=4, pady=4)
 
     tk.Label(tb, text="Colormap:", bg="#e1e1e1").pack(side="left", padx=(4, 2))
-    cmap_var = tk.StringVar(value="gray")
+    cmap_var = tk.StringVar(value="viridis")
     tk.OptionMenu(tb, cmap_var, "gray", "hot", "viridis", "plasma", "bone", "inferno").pack(side="left")
 
     tk.Label(tb, text="Title:", bg="#e1e1e1").pack(side="left", padx=(12, 2))
@@ -549,7 +539,7 @@ def launch_pt2_viewer():
     title_entry.pack(side="left")
 
     def _update_title(*_):
-        ax2.set_title(title_var.get(), fontsize=11, fontweight='bold')
+        ax2.set_title(title_var.get(), fontsize=_tfs_2, fontweight='bold')
         canvas2.draw_idle()
 
     title_var.trace_add("write", _update_title)
@@ -557,12 +547,13 @@ def launch_pt2_viewer():
     # ── Figure ─────────────────────────────────────────────────────────────
     fig2 = Figure(figsize=(5.5, 5.5), tight_layout=True)
     ax2  = fig2.add_subplot(111)
-    im   = ax2.imshow(img, cmap="gray", origin="lower", aspect="equal")
+    im   = ax2.imshow(img, cmap="viridis", origin="lower", aspect="equal")
     cbar = fig2.colorbar(im, ax=ax2, fraction=0.046, pad=0.04)
-    cbar.set_label("Signal intensity (a.u.)")
-    ax2.set_title(os.path.splitext(os.path.basename(path))[0], fontsize=11, fontweight='bold')
-    ax2.set_xlabel("Z (pixels)")
-    ax2.set_ylabel("Y (pixels)")
+    _tfs_2, _lfs_2, _ = _fig_font_sizes(fig2)
+    cbar.set_label("Signal intensity (a.u.)", fontsize=_lfs_2)
+    ax2.set_title(os.path.splitext(os.path.basename(path))[0], fontsize=_tfs_2, fontweight='bold')
+    ax2.set_xlabel("Z (pixels)", fontsize=_lfs_2)
+    ax2.set_ylabel("Y (pixels)", fontsize=_lfs_2)
 
     canvas2 = FigureCanvasTkAgg(fig2, master=win)
     canvas2.draw()
@@ -608,8 +599,8 @@ def load_data_action():
         # Reset persisted attributes for the new file
         plot_attrs.update({
             "title": None, "xlabel": None, "ylabel": None,
-            "title_fs": 14, "xlabel_fs": 12, "ylabel_fs": 12,
-            "leg_fs": 8, "leg_loc": "upper left", "leg_entries": None,
+            "title_fs": 24, "xlabel_fs": 16, "ylabel_fs": 16,
+            "leg_fs": 14, "leg_loc": "upper left", "leg_entries": None,
         })
 
         # Auto-restore markers from sidecar if it exists
@@ -1209,11 +1200,12 @@ def launch_curve_fit(source_line, p1_tuple, p2_tuple):
         sub_ax.axvline(t1, color='gray', lw=1.0, linestyle='--', alpha=0.6)
         sub_ax.axvline(t2, color='gray', lw=1.0, linestyle='--', alpha=0.6)
 
-        sub_ax.set_xlabel(f"{clean_xlbl} (s)", fontweight='bold')
-        sub_ax.set_ylabel(clean_ylbl, fontweight='bold')
-        sub_ax.legend(fontsize=7, loc='best')
+        _tfs, _lfs, _lgfs = _fig_font_sizes(sub_fig)
+        sub_ax.set_xlabel(f"{clean_xlbl} (s)", fontweight='bold', fontsize=_lfs)
+        sub_ax.set_ylabel(clean_ylbl, fontweight='bold', fontsize=_lfs)
+        sub_ax.legend(fontsize=_lgfs, loc='best')
         sub_ax.set_title(f"Curve Fit — {model_name.split('(')[0].strip()}",
-                         fontweight='bold', fontsize=10)
+                         fontweight='bold', fontsize=_tfs)
         sub_ax.grid(True, linestyle=':', alpha=0.5)
         sub_fig.tight_layout()
         # Set xlim AFTER tight_layout so it isn't overridden
@@ -1303,16 +1295,17 @@ def launch_zscore_peth(center_t):
     ax_heat.imshow(z_binned.reshape(1, -1), aspect='auto', cmap='YlGnBu_r',
                     extent=[-30, 30, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
     ax_heat.set_yticks([])
-    ax_heat.set_ylabel("Intensity", fontweight='bold')
-    
+    _tfs_p, _lfs_p, _ = _fig_font_sizes(fig_peth)
+    ax_heat.set_ylabel("Intensity", fontweight='bold', fontsize=_lfs_p)
+
     ax_line.plot(slice_x - center_t, z_seg, color='black', linewidth=1.5)
     ax_line.axvline(0, color='red', linestyle='--', alpha=0.8)
     ax_line.set_xlim([-15, 15])
     ax_line.set_ylim([-5, 5])
-    ax_line.set_ylabel(f"Z-Score ({mode_str})", fontweight='bold')
-    ax_line.set_xlabel("Time from Center (s)", fontweight='bold')
-    
-    fig_peth.suptitle("Z-score PETH", fontsize=14, fontweight='bold')
+    ax_line.set_ylabel(f"Z-Score ({mode_str})", fontweight='bold', fontsize=_lfs_p)
+    ax_line.set_xlabel("Time from Center (s)", fontweight='bold', fontsize=_lfs_p)
+
+    fig_peth.suptitle("Z-score PETH", fontsize=_tfs_p, fontweight='bold')
     fig_peth.tight_layout(rect=[0, 0.05, 1, 0.95])
     
     canvas_peth = FigureCanvasTkAgg(fig_peth, master=pop)
@@ -1348,11 +1341,12 @@ def launch_fft(center_t):
             if len(freqs) > 0:
                 ax_f.plot(freqs, power, color=color, lw=1.5)
                 pl.annotate_fft_peaks(ax_f, freqs, power, color)
-            ax_f.set_ylabel("Power", fontweight='bold')
-            ax_f.set_title(label, fontweight='bold')
+            _tfs_f, _lfs_f, _ = _fig_font_sizes(fig_fft)
+            ax_f.set_ylabel("Power", fontweight='bold', fontsize=_lfs_f)
+            ax_f.set_title(label, fontweight='bold', fontsize=_tfs_f)
             ax_f.set_xlim(0.05, fs / 2)
             ax_f.autoscale(axis='y')
-        ax_hh.set_xlabel("Frequency (Hz)", fontweight='bold')
+        ax_hh.set_xlabel("Frequency (Hz)", fontweight='bold', fontsize=_lfs_f)
     else:
         signal = cache['corr'] if show_corrected else cache['raw']
         freqs, power, _, _ = pl.compute_fft_slice(cache['x'], signal, center_t, fs, window=window)
@@ -1361,9 +1355,10 @@ def launch_fft(center_t):
         if len(freqs) > 0:
             ax_f.plot(freqs, power, color='blue', lw=1.5)
             pl.annotate_fft_peaks(ax_f, freqs, power, 'blue')
-        ax_f.set_xlabel("Frequency (Hz)", fontweight='bold')
-        ax_f.set_ylabel("Power", fontweight='bold')
-        ax_f.set_title(f"FFT — {cache['store']}", fontweight='bold')
+        _tfs_f, _lfs_f, _ = _fig_font_sizes(fig_fft)
+        ax_f.set_xlabel("Frequency (Hz)", fontweight='bold', fontsize=_lfs_f)
+        ax_f.set_ylabel("Power", fontweight='bold', fontsize=_lfs_f)
+        ax_f.set_title(f"FFT — {cache['store']}", fontweight='bold', fontsize=_tfs_f)
         ax_f.set_xlim(0.05, fs / 2)
         ax_f.autoscale(axis='y')
 
@@ -1435,15 +1430,13 @@ def _update_plot_with_notes(markers):
 
 def _apply_plot_attrs():
     """Re-apply persisted label/legend customisations after any redraw."""
-    if plot_attrs["title"]:
-        ax.set_title(plot_attrs["title"], fontweight='bold', pad=15,
-                     fontsize=plot_attrs["title_fs"])
-    if plot_attrs["xlabel"]:
-        ax.set_xlabel(plot_attrs["xlabel"], fontweight='bold',
-                      fontsize=plot_attrs["xlabel_fs"])
-    if plot_attrs["ylabel"]:
-        ax.set_ylabel(plot_attrs["ylabel"], fontweight='bold',
-                      fontsize=plot_attrs["ylabel_fs"])
+    # Always apply font sizes; only override text when the user has set a custom value.
+    title_text  = plot_attrs["title"]  or ax.get_title()
+    xlabel_text = plot_attrs["xlabel"] or ax.get_xlabel()
+    ylabel_text = plot_attrs["ylabel"] or ax.get_ylabel()
+    ax.set_title(title_text,  fontweight='bold', pad=15, fontsize=plot_attrs["title_fs"])
+    ax.set_xlabel(xlabel_text, fontweight='bold', fontsize=plot_attrs["xlabel_fs"])
+    ax.set_ylabel(ylabel_text, fontweight='bold', fontsize=plot_attrs["ylabel_fs"])
 
     # Rebuild legend with persisted settings
     handles, labels = ax.get_legend_handles_labels()
@@ -1527,7 +1520,7 @@ def simple_plot(draw_now=True):
 
     _update_plot_with_notes(cache['markers'])
     ax.set_xlabel(x_label, fontweight='bold')
-    ax.legend(loc='upper left', fontsize=8)
+    ax.legend(loc='upper left', fontsize=plot_attrs["leg_fs"])
     ax.set_xlim(cache['x'][0], cache['x'][-1])
     _apply_plot_attrs()
 
@@ -1592,21 +1585,15 @@ def open_attributes_window():
 
     pad = {'padx': 10, 'pady': 5}
 
-    # ---- current values ------------------------------------------------
-    cur_title  = ax.get_title()
-    cur_xlabel = ax.get_xlabel()
-    cur_ylabel = ax.get_ylabel()
+    # ---- seed values from saved plot_attrs, fall back to live axes ------
+    cur_title  = plot_attrs["title"]  or ax.get_title()
+    cur_xlabel = plot_attrs["xlabel"] or ax.get_xlabel()
+    cur_ylabel = plot_attrs["ylabel"] or ax.get_ylabel()
 
-    def _fsize(getter):
-        try:    return int(getter().get_size())
-        except: return 12
-
-    cur_title_fs  = _fsize(ax.title.get_fontproperties) if ax.get_title() else 12
-    cur_xlabel_fs = _fsize(ax.xaxis.label.get_fontproperties)
-    cur_ylabel_fs = _fsize(ax.yaxis.label.get_fontproperties)
-
-    leg = ax.get_legend()
-    cur_leg_fs = int(leg.get_texts()[0].get_fontsize()) if leg and leg.get_texts() else 8
+    cur_title_fs  = plot_attrs["title_fs"]
+    cur_xlabel_fs = plot_attrs["xlabel_fs"]
+    cur_ylabel_fs = plot_attrs["ylabel_fs"]
+    cur_leg_fs    = plot_attrs["leg_fs"]
 
     # ---- helpers -------------------------------------------------------
     def _row(parent, label_text, row, default_text='', default_size=12):
@@ -1625,12 +1612,9 @@ def open_attributes_window():
     lf = tk.LabelFrame(win, text="Labels & Font Sizes", padx=8, pady=6)
     lf.grid(row=0, column=0, columnspan=2, padx=10, pady=(10,5), sticky="ew")
 
-    e_title,  e_title_fs  = _row(lf, "Title:",   0,
-                                 cur_title,  cur_title_fs)
-    e_xlabel, e_xlabel_fs = _row(lf, "X Label:", 1,
-                                 cur_xlabel, cur_xlabel_fs)
-    e_ylabel, e_ylabel_fs = _row(lf, "Y Label:", 2,
-                                 cur_ylabel, cur_ylabel_fs)
+    e_title,  e_title_fs  = _row(lf, "Title:",   0, cur_title,  cur_title_fs)
+    e_xlabel, e_xlabel_fs = _row(lf, "X Label:", 1, cur_xlabel, cur_xlabel_fs)
+    e_ylabel, e_ylabel_fs = _row(lf, "Y Label:", 2, cur_ylabel, cur_ylabel_fs)
 
     # ---- legend section ------------------------------------------------
     lf2 = tk.LabelFrame(win, text="Legend", padx=8, pady=6)
@@ -1642,20 +1626,23 @@ def open_attributes_window():
     e_leg_fs.grid(row=0, column=1, sticky="w", **pad)
 
     tk.Label(lf2, text="Position:").grid(row=0, column=2, sticky="e", padx=(20,2))
-    leg_loc_var = tk.StringVar(value="upper left")
+    leg_loc_var = tk.StringVar(value=plot_attrs["leg_loc"])
     leg_locs = ["upper left", "upper right", "lower left", "lower right",
                 "upper center", "lower center", "center left", "center right",
                 "center", "best"]
     tk.OptionMenu(lf2, leg_loc_var, *leg_locs).grid(row=0, column=3, padx=(0,10))
 
     # --- per-entry show/hide + rename ---
-    # collect current legend handles and labels from the axes
     handles, labels = ax.get_legend_handles_labels()
-    # filter out _nolegend_ entries
     entries = [(h, l) for h, l in zip(handles, labels) if not l.startswith('_')]
 
-    entry_vars   = []   # (BooleanVar, StringVar) per entry
-    entry_frame  = tk.Frame(lf2)
+    # Build lookup from previously saved state
+    saved_entry_map = {}
+    if plot_attrs["leg_entries"]:
+        saved_entry_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
+
+    entry_vars  = []
+    entry_frame = tk.Frame(lf2)
     entry_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(6,0))
 
     if entries:
@@ -1663,8 +1650,9 @@ def open_attributes_window():
         tk.Label(entry_frame, text="Label").grid(row=0, column=1, padx=4, sticky="w")
 
         for i, (h, l) in enumerate(entries):
-            bv = tk.BooleanVar(value=True)
-            sv = tk.StringVar(value=l)
+            saved_label, saved_vis = saved_entry_map.get(l, (l, True))
+            bv = tk.BooleanVar(value=saved_vis)
+            sv = tk.StringVar(value=saved_label)
             tk.Checkbutton(entry_frame, variable=bv).grid(
                 row=i+1, column=0, padx=4)
             e = tk.Entry(entry_frame, textvariable=sv, width=28)
