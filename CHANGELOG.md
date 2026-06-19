@@ -8,6 +8,9 @@
 - Font sizes apply from first load — no longer require opening Edit Attributes first.
 - Figures with multiple subplots (PETH, Oxysoft FFT) automatically halve font sizes to avoid crowding.
 
+**Bug fixes:**
+- Window resize no longer breaks zoom/scroll: canvas `resize_event` now invalidates the blit background and reschedules a fresh capture.
+
 ---
 
 ## v1.2.0

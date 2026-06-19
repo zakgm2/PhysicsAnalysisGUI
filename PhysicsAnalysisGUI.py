@@ -1818,6 +1818,13 @@ fig.canvas.mpl_connect('button_release_event', on_release)
 f_zoom = zoom_factory(ax, base_scale=1.1)
 fig.canvas.mpl_connect('scroll_event', f_zoom)
 
+def _on_resize(event):
+    global _hover_bg
+    _hover_bg = None
+    _schedule_hover_bg_refresh(delay_ms=250)
+
+fig.canvas.mpl_connect('resize_event', _on_resize)
+
 global rect_selector
 rect_selector = RectangleSelector(
     ax, on_select, useblit=True, button=[1],
