@@ -327,6 +327,10 @@ def on_resize(ctx, event):
 def reset_zoom(ctx):
     if ctx.cache is None:
         return
+    if ctx.settings.get("plot_engine") == "pyqtgraph":
+        from .pg_engine import pg_reset_zoom
+        pg_reset_zoom(ctx)
+        return
     ctx.ax.set_xlim(ctx.cache['x'][0], ctx.cache['x'][-1])
     ctx.ax.autoscale(axis='y')
     _refresh_hover_bg(ctx)

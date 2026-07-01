@@ -17,15 +17,13 @@ from ..loaders.pt2 import launch_pt2_viewer
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers
 from ..interaction import reset_zoom
-from ..plotting import simple_plot, export_canvas_action
+from ..plotting import simple_plot, export_canvas_action, set_grid_visibility
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 
 
 def _toggle_grid(ctx, state):
-    ctx.show_grid = bool(state)
-    if ctx.cache is not None:
-        simple_plot(ctx)
+    set_grid_visibility(ctx, state)
 
 
 def _undo_last_marker(ctx):

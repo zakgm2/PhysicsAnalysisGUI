@@ -3,4 +3,5 @@ matplotlib
 scipy
 openpyxl
 PyQt6
+pyqtgraph
 git+https://github.com/zakgm2/PhysicsLibrary.git

@@ -9,9 +9,11 @@ Two interchangeable GUI implementations are included:
 | File | Framework | Status |
 |------|-----------|--------|
 | `PhysicsAnalysisGUI.py` | tkinter | Stable, full feature set |
-| `run_qt.py` | PyQt6 | Full feature parity with the tkinter version |
+| `run_qt.py` | PyQt6 | Full feature parity with the tkinter version, plus an optional GPU-accelerated (PyQtGraph) main plot |
 
 Both share the same underlying logic from [PhysicsLibrary](https://github.com/zakgm2/PhysicsLibrary) — only the widget/window layer differs.
+
+The PyQt6 version's main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-accelerated, handles large recordings much better) — switch anytime in **Options**. FFT/PETH/Curve Fit/PT2 windows always use matplotlib regardless of the main-plot engine.
 
 ---
 
@@ -30,6 +32,7 @@ Both share the same underlying logic from [PhysicsLibrary](https://github.com/za
 - **Golden-ratio font scaling** — all figure text scales proportionally to figure size
 - **Grid toggle** — show/hide background grid from the toolbar
 - **TSI Fit Factor** — extracted automatically from Oxysoft files and shown in the legend
+- **Options dialog** (PyQt6 version) — default folder for Open dialogs, main-plot render decimation, background-thread loading, and CPU/GPU plot engine selection
 
 ---
 
@@ -99,6 +102,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.1.0 | PyQtGraph (GPU) plot engine option, Options dialog, background loading |
 | 2.0.0 | PyQt6 GUI port added alongside the tkinter version |
 | 1.3.0 | Golden-ratio proportional font sizing, resize-safe zoom |
 | 1.2.0 | PT2 EFNMR image viewer, scroll/double-click zoom fixes |

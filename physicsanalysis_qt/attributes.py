@@ -28,10 +28,9 @@ class AttributesDialog(QDialog):
         layout = QVBoxLayout(self)
 
         plot_attrs = ctx.plot_attrs
-        ax = ctx.ax
-        cur_title = plot_attrs["title"] or ax.get_title()
-        cur_xlabel = plot_attrs["xlabel"] or ax.get_xlabel()
-        cur_ylabel = plot_attrs["ylabel"] or ax.get_ylabel()
+        cur_title = plot_attrs["title"] or ctx._last_title
+        cur_xlabel = plot_attrs["xlabel"] or ctx._last_xlabel
+        cur_ylabel = plot_attrs["ylabel"] or ctx._last_ylabel
 
         # Labels & font sizes
         lf = QGroupBox("Labels & Font Sizes")
@@ -39,6 +38,9 @@ class AttributesDialog(QDialog):
         self.e_title, self.e_title_fs = self._row(grid, 0, "Title:", cur_title, plot_attrs["title_fs"])
         self.e_xlabel, self.e_xlabel_fs = self._row(grid, 1, "X Label:", cur_xlabel, plot_attrs["xlabel_fs"])
         self.e_ylabel, self.e_ylabel_fs = self._row(grid, 2, "Y Label:", cur_ylabel, plot_attrs["ylabel_fs"])
+        self.cb_bold = QCheckBox("Bold")
+        self.cb_bold.setChecked(plot_attrs.get("bold", True))
+        grid.addWidget(self.cb_bold, 3, 0, 1, 2)
         layout.addWidget(lf)
 
         # Legend
@@ -57,8 +59,7 @@ class AttributesDialog(QDialog):
         top_row.addStretch(1)
         lf2_layout.addLayout(top_row)
 
-        handles, labels = ax.get_legend_handles_labels()
-        entries = [(h, l) for h, l in zip(handles, labels) if not l.startswith('_')]
+        entries = list(ctx._legend_entries)
         saved_entry_map = {}
         if plot_attrs["leg_entries"]:
             saved_entry_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
@@ -68,7 +69,7 @@ class AttributesDialog(QDialog):
             entry_grid = QGridLayout()
             entry_grid.addWidget(QLabel("Show"), 0, 0)
             entry_grid.addWidget(QLabel("Label"), 0, 1)
-            for i, (h, l) in enumerate(entries):
+            for i, l in enumerate(entries):
                 saved_label, saved_vis = saved_entry_map.get(l, (l, True))
                 cb = QCheckBox()
                 cb.setChecked(saved_vis)
@@ -126,6 +127,7 @@ class AttributesDialog(QDialog):
 
         plot_attrs["leg_fs"] = self._safe_int(self.e_leg_fs, plot_attrs["leg_fs"])
         plot_attrs["leg_loc"] = self.leg_loc_combo.currentText()
+        plot_attrs["bold"] = self.cb_bold.isChecked()
 
         if self.entry_widgets:
             plot_attrs["leg_entries"] = [
@@ -133,8 +135,11 @@ class AttributesDialog(QDialog):
                 for cb, le, orig_l in self.entry_widgets
             ]
 
-        plotting._apply_plot_attrs(ctx)
-        _refresh_hover_bg(ctx)
+        if ctx.settings.get("plot_engine") == "pyqtgraph":
+            plotting.simple_plot(ctx)  # pg has no incremental "apply", full rebuild
+        else:
+            plotting._apply_plot_attrs(ctx)
+            _refresh_hover_bg(ctx)
         self.accept()
 
 
