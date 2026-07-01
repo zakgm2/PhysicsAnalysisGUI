@@ -2,4 +2,5 @@ numpy
 matplotlib
 scipy
 openpyxl
+PyQt6
 git+https://github.com/zakgm2/PhysicsLibrary.git

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PhysicsAnalysisGUI"
+version = "2.0.0"
+description = "Desktop GUI for loading, visualising, and analysing physics lab data (TDT, Oxysoft, generic tabular, EFNMR/.pt2)"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "scipy",
+    "openpyxl",
+    "PyQt6",
+    "PhysicsLibrary @ git+https://github.com/zakgm2/PhysicsLibrary.git",
+]
