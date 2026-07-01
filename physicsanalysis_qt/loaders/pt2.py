@@ -78,7 +78,7 @@ class PT2ViewerDialog(QDialog):
 
 
 def launch_pt2_viewer(ctx):
-    start_dir = ctx.last_dir or os.path.expanduser("~")
+    start_dir = ctx.last_dir or ctx.settings["default_folder"]
     path, _ = QFileDialog.getOpenFileName(
         ctx.win, "Open EFNMR / MRI Image (.pt2)", start_dir,
         "Prospa 2D image (*.pt2);;All files (*.*)"

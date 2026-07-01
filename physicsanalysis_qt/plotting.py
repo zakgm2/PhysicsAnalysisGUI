@@ -12,6 +12,60 @@ from PyQt6.QtWidgets import QFileDialog
 
 from .toasts import show_error, show_window_toast
 
+_DECIMATE_MAX_POINTS_DEFAULT = 2000  # fallback if no ctx is available
+
+
+def _min_max_decimate(x, y, xlim, max_points=_DECIMATE_MAX_POINTS_DEFAULT):
+    """
+    Reduce (x, y) to at most max_points, keeping the min and max of every
+    bin so peaks/troughs survive (a naive stride would smear them out).
+    Only the currently visible x-range is kept — this is what makes
+    pan/zoom redraw cost independent of how many samples the recording has.
+    """
+    lo, hi = xlim
+    i0 = np.searchsorted(x, lo, side='left')
+    i1 = np.searchsorted(x, hi, side='right')
+    i0 = max(0, i0 - 1)
+    i1 = min(len(x), i1 + 1)
+    seg_x = x[i0:i1]
+    seg_y = y[i0:i1]
+    n = len(seg_x)
+    if n <= max_points:
+        return seg_x, seg_y
+
+    bins = max(1, max_points // 2)
+    bin_size = n // bins
+    trim = bins * bin_size
+    xb = seg_x[:trim].reshape(bins, bin_size)
+    yb = seg_y[:trim].reshape(bins, bin_size)
+
+    idx_min = yb.argmin(axis=1)
+    idx_max = yb.argmax(axis=1)
+    rows = np.arange(bins)
+    order = idx_min <= idx_max
+    first = np.where(order, idx_min, idx_max)
+    second = np.where(order, idx_max, idx_min)
+
+    xs = np.empty(bins * 2)
+    ys = np.empty(bins * 2)
+    xs[0::2] = xb[rows, first]
+    ys[0::2] = yb[rows, first]
+    xs[1::2] = xb[rows, second]
+    ys[1::2] = yb[rows, second]
+    return xs, ys
+
+
+def update_decimated_lines(ctx):
+    """Re-decimate every tracked trace to the axes' current xlim. Cheap
+    enough to call on every xlim change (pan/zoom/reset)."""
+    if not ctx._decim_lines:
+        return
+    xlim = ctx.ax.get_xlim()
+    max_points = ctx.settings.get("decimate_max_points", _DECIMATE_MAX_POINTS_DEFAULT)
+    for line, full_x, full_y in ctx._decim_lines:
+        dx, dy = _min_max_decimate(full_x, full_y, xlim, max_points=max_points)
+        line.set_data(dx, dy)
+
 
 def _update_plot_with_notes(ctx, markers):
     trans = transforms.blended_transform_factory(ctx.ax.transData, ctx.ax.transAxes)
@@ -72,22 +126,32 @@ def simple_plot(ctx, draw_now=True):
     ax.clear()
     ax.axhline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
 
+    decim_lines = []  # (line, full_x, full_y) — trace lines tracked for decimation
+
     if cache.get('source') == 'Oxysoft':
         x = cache['x']
         o2hb = cache['o2hb']
         hhb = cache['hhb']
         for i in range(o2hb.shape[0]):
-            ax.plot(x, o2hb[i], color='#FF9999', lw=0.8, alpha=0.5,
-                    label='O2Hb channels' if i == 0 else '_nolegend_')
-            ax.plot(x, hhb[i], color='#99BBFF', lw=0.8, alpha=0.5,
-                    label='HHb channels' if i == 0 else '_nolegend_')
+            ln, = ax.plot(x, o2hb[i], color='#FF9999', lw=0.8, alpha=0.5,
+                           label='O2Hb channels' if i == 0 else '_nolegend_')
+            decim_lines.append((ln, x, o2hb[i]))
+            ln, = ax.plot(x, hhb[i], color='#99BBFF', lw=0.8, alpha=0.5,
+                           label='HHb channels' if i == 0 else '_nolegend_')
+            decim_lines.append((ln, x, hhb[i]))
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
-        ax.plot(x, o2hb.mean(axis=0), color='#CC0000', lw=2.0, label=f'Mean O2Hb{ff_tag}')
-        ax.plot(x, hhb.mean(axis=0), color='#0033CC', lw=2.0, label=f'Mean HHb{ff_tag}')
+        mean_o2hb = o2hb.mean(axis=0)
+        ln, = ax.plot(x, mean_o2hb, color='#CC0000', lw=2.0, label=f'Mean O2Hb{ff_tag}')
+        decim_lines.append((ln, x, mean_o2hb))
+        mean_hhb = hhb.mean(axis=0)
+        ln, = ax.plot(x, mean_hhb, color='#0033CC', lw=2.0, label=f'Mean HHb{ff_tag}')
+        decim_lines.append((ln, x, mean_hhb))
         if 'thb' in cache:
             thb = cache['thb']
-            ax.plot(x, thb.mean(axis=0), color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
+            mean_thb = thb.mean(axis=0)
+            ln, = ax.plot(x, mean_thb, color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
+            decim_lines.append((ln, x, mean_thb))
         ax.set_ylabel("Delta Concentration (uM)", fontweight='bold')
         ax.set_title(f"NIRS — {cache['store']}", fontweight='bold', pad=15)
         x_label = "Time (s)"
@@ -98,8 +162,10 @@ def simple_plot(ctx, draw_now=True):
                        '#6600CC', '#008888', '#AA0055', '#005588']
         for i, (col_name, y) in enumerate(cache['y_columns'].items()):
             mask = ~np.isnan(y)
-            ax.plot(x[mask], y[mask], 'o-', lw=1.8, markersize=4,
-                    color=_GEN_COLORS[i % len(_GEN_COLORS)], label=col_name)
+            xv, yv = x[mask], y[mask]
+            ln, = ax.plot(xv, yv, 'o-', lw=1.8, markersize=4,
+                           color=_GEN_COLORS[i % len(_GEN_COLORS)], label=col_name)
+            decim_lines.append((ln, xv, yv))
         ax.set_ylabel("Value", fontweight='bold')
         ax.set_title(cache['store'], fontweight='bold', pad=15)
         x_label = cache.get('x_label', 'X')
@@ -109,17 +175,27 @@ def simple_plot(ctx, draw_now=True):
         color_choice = 'blue' if ctx.show_corrected else 'gray'
         label_text = 'dF/F (corrected)' if ctx.show_corrected else 'Raw signal'
         ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
-        ax.plot(cache['x'], data_to_plot, color=color_choice,
-                lw=1.5, alpha=0.8, label=label_text)
+        ln, = ax.plot(cache['x'], data_to_plot, color=color_choice,
+                       lw=1.5, alpha=0.8, label=label_text)
+        decim_lines.append((ln, cache['x'], data_to_plot))
         ax.set_ylabel("Amplitude", fontweight='bold')
         ax.set_title(f"{label_text} — {cache['store']}", fontweight='bold', pad=15)
         x_label = "Time (s)"
         n_snap_lines = 1
 
+    ctx._decim_lines = decim_lines
+    # ax.clear() drops any previously connected callbacks, so this must be
+    # reconnected on every redraw. Once wired, every future pan/zoom/reset
+    # (all of which go through ax.set_xlim somewhere) automatically keeps
+    # each trace decimated to the visible range — no changes needed in
+    # interaction.py to benefit from it.
+    ax.callbacks.connect('xlim_changed', lambda _ax: update_decimated_lines(ctx))
+
     _update_plot_with_notes(ctx, cache['markers'])
     ax.set_xlabel(x_label, fontweight='bold')
     ax.legend(loc='upper left', fontsize=ctx.plot_attrs["leg_fs"])
     ax.set_xlim(cache['x'][0], cache['x'][-1])
+    update_decimated_lines(ctx)  # belt-and-suspenders in case xlim didn't change
     _apply_plot_attrs(ctx)
 
     if ctx.show_grid:

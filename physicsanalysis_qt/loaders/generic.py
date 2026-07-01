@@ -140,7 +140,7 @@ class GenericLoaderDialog(QDialog):
 
 
 def launch_generic_file_loader(ctx):
-    start_dir = ctx.last_dir or os.path.expanduser("~")
+    start_dir = ctx.last_dir or ctx.settings["default_folder"]
     path, _ = QFileDialog.getOpenFileName(
         ctx.win, "Open Any Tabular File", start_dir,
         "All tabular (*.xlsx *.xls *.csv *.tsv *.txt *.dat);;Excel (*.xlsx *.xls);;"

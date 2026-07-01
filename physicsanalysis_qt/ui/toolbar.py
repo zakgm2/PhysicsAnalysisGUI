@@ -19,6 +19,7 @@ from ..sidecar import save_markers
 from ..interaction import reset_zoom
 from ..plotting import simple_plot, export_canvas_action
 from ..attributes import open_attributes_window
+from ..options import open_options_dialog
 
 
 def _toggle_grid(ctx, state):
@@ -96,6 +97,12 @@ def build_toolbar(ctx):
     btn_edit_attrs = QPushButton("Edit Attributes")
     btn_edit_attrs.clicked.connect(lambda: open_attributes_window(ctx))
     layout.addWidget(btn_edit_attrs)
+
+    layout.addWidget(QLabel("|"))
+
+    btn_options = QPushButton("Options")
+    btn_options.clicked.connect(lambda: open_options_dialog(ctx))
+    layout.addWidget(btn_options)
 
     layout.addStretch(1)
     return toolbar

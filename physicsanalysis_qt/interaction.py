@@ -5,9 +5,13 @@ Mouse/view interaction: rect-select zoom, right-click pan, blit-based
 hover tracker, scroll zoom, resize-safe zoom, reset zoom.
 """
 
+import time
+
 import numpy as np
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCursor
+
+_PAN_MIN_FRAME_INTERVAL = 1 / 30  # cap pan redraws at ~30 fps
 
 from . import plotting
 from .markers import place_marker, find_nearest_marker, right_click_marker_menu
@@ -57,6 +61,7 @@ def on_press(ctx, event):
         else:
             ctx.is_dragging = True
             ctx.press_x, ctx.press_y = event.x, event.y
+            ctx._last_pan_draw_time = 0.0
         return
 
     # Curve Fit mode: record mouse-down pixel position for drag detection
@@ -84,7 +89,18 @@ def on_motion(ctx, event):
         shift_y = (dy / bbox.height) * (ylim[1] - ylim[0])
         ax.set_xlim(xlim[0] - shift_x, xlim[1] - shift_x)
         ax.set_ylim(ylim[0] - shift_y, ylim[1] - shift_y)
-        canvas.draw_idle()
+
+        # Redrawing a long trace (TDT/Oxysoft recordings can be hundreds of
+        # thousands of samples) on every single mouse-move tick is the
+        # actual bottleneck — Qt's draw_idle() coalescing doesn't help
+        # because each individual redraw is itself slow, so the event queue
+        # backs up. Cap the redraw rate instead; xlim/ylim above still
+        # update every tick (cheap), so the final position is always
+        # correct even on frames we skip drawing.
+        now = time.monotonic()
+        if now - ctx._last_pan_draw_time >= _PAN_MIN_FRAME_INTERVAL:
+            ctx._last_pan_draw_time = now
+            canvas.draw_idle()
         return
 
     # 2. Hover tracker (blit-based)
@@ -114,9 +130,19 @@ def on_motion(ctx, event):
         and l.get_linewidth() >= 1.5
     ]
 
+    # Trace lines are decimated for rendering (see plotting.py), which would
+    # otherwise make hover only able to snap to one of ~2000 visible points
+    # instead of the real sample. Look up full-resolution data for lines
+    # that are tracked, so the snap and the "Pt:" index stay exact.
+    full_res = {id(line): (fx, fy) for line, fx, fy in ctx._decim_lines}
+
     for i, line in enumerate(visible_lines):
-        x_data = np.asarray(line.get_xdata())
-        y_data = np.asarray(line.get_ydata())
+        fx, fy = full_res.get(id(line), (None, None))
+        if fx is not None:
+            x_data, y_data = fx, fy
+        else:
+            x_data = np.asarray(line.get_xdata())
+            y_data = np.asarray(line.get_ydata())
         if len(x_data) == 0:
             continue
         idx = int(np.abs(x_data - target_x).argmin())
@@ -234,7 +260,14 @@ def on_release(ctx, event):
                 show_error(ctx, "No active data trace found to analyze.")
                 return
 
-            x_data = snap_line.get_xdata()
+            # launch_curve_fit indexes directly into the full-resolution
+            # cache arrays, so this index must come from full-resolution
+            # data too — snap_line.get_xdata() is the decimated render data
+            # (see plotting.py) and would give an index in the wrong range.
+            full_res = {id(line): fx for line, fx, _ in ctx._decim_lines}
+            x_data = full_res.get(id(snap_line))
+            if x_data is None:
+                x_data = snap_line.get_xdata()
             nearest_idx = int(np.abs(x_data - event.xdata).argmin())
             ctx.slope_clicks.append((nearest_idx, event.xdata))
             show_window_toast(ctx, f"Point {len(ctx.slope_clicks)}: {event.xdata:.2f}s")

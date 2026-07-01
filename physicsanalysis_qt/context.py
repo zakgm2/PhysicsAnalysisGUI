@@ -9,6 +9,8 @@ module can see exactly what state exists without hunting for `global`
 statements.
 """
 
+import os
+
 _MARKER_COLORS = ["green", "red", "blue", "orange", "purple", "black"]
 
 _PHI = 1.6180339887  # golden ratio
@@ -25,6 +27,15 @@ def default_plot_attrs():
         "leg_fs":      14,
         "leg_loc":     "upper left",
         "leg_entries": None,
+    }
+
+
+def default_settings():
+    desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    return {
+        "default_folder":      desktop if os.path.isdir(desktop) else os.path.expanduser("~"),
+        "decimate_max_points": 2000,
+        "background_loading":  False,
     }
 
 
@@ -72,6 +83,19 @@ class AppState:
         self.is_dragging = False
         self.press_x = None
         self.press_y = None
+        self._last_pan_draw_time = 0.0
+
+        # Decimation: (line, full_x, full_y) for every plotted trace, so its
+        # rendered vertex count can be kept bounded to the visible pixel
+        # range regardless of how many samples the recording actually has.
+        self._decim_lines = []
 
         # Curve fit click capture
         self.slope_clicks = []
+
+        # Settings (Options dialog)
+        self.settings = default_settings()
+
+        # Background loading (Options: "Load data files on a background thread")
+        self._bg_thread = None
+        self._bg_worker = None
