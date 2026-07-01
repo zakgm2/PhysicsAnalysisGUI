@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.transforms as transforms
 from PyQt6.QtWidgets import QFileDialog
 
+from .fonts import main_plot_scale
 from .toasts import show_error, show_window_toast
 
 _DECIMATE_MAX_POINTS_DEFAULT = 2000  # fallback if no ctx is available
@@ -84,15 +85,23 @@ def _apply_plot_attrs(ctx):
     """Always apply persisted font sizes; only override text when the user set one."""
     ax = ctx.ax
     plot_attrs = ctx.plot_attrs
-    title_text = plot_attrs["title"] or ax.get_title()
-    xlabel_text = plot_attrs["xlabel"] or ax.get_xlabel()
-    ylabel_text = plot_attrs["ylabel"] or ax.get_ylabel()
-    ax.set_title(title_text, fontweight='bold', pad=15, fontsize=plot_attrs["title_fs"])
-    ax.set_xlabel(xlabel_text, fontweight='bold', fontsize=plot_attrs["xlabel_fs"])
-    ax.set_ylabel(ylabel_text, fontweight='bold', fontsize=plot_attrs["ylabel_fs"])
+    scale = main_plot_scale(ctx.stacked_plot_widget)
+    title_fs = max(8, round(plot_attrs["title_fs"] * scale))
+    xlabel_fs = max(6, round(plot_attrs["xlabel_fs"] * scale))
+    ylabel_fs = max(6, round(plot_attrs["ylabel_fs"] * scale))
+    leg_fs = max(5, round(plot_attrs["leg_fs"] * scale))
+
+    weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
+    title_text = plot_attrs["title"] or ctx._last_title or ax.get_title()
+    xlabel_text = plot_attrs["xlabel"] or ctx._last_xlabel or ax.get_xlabel()
+    ylabel_text = plot_attrs["ylabel"] or ctx._last_ylabel or ax.get_ylabel()
+    ax.set_title(title_text, fontweight=weight, pad=15, fontsize=title_fs)
+    ax.set_xlabel(xlabel_text, fontweight=weight, fontsize=xlabel_fs)
+    ax.set_ylabel(ylabel_text, fontweight=weight, fontsize=ylabel_fs)
 
     handles, labels = ax.get_legend_handles_labels()
     entries = [(h, l) for h, l in zip(handles, labels) if not l.startswith('_')]
+    ctx._legend_entries = [l for _, l in entries]
     if not entries:
         return
 
@@ -109,20 +118,31 @@ def _apply_plot_attrs(ctx):
                 new_h.append(h)
                 new_l.append(l)
         if new_h:
-            ax.legend(new_h, new_l, fontsize=plot_attrs["leg_fs"], loc=plot_attrs["leg_loc"])
+            ax.legend(new_h, new_l, fontsize=leg_fs, loc=plot_attrs["leg_loc"])
         else:
             leg = ax.get_legend()
             if leg:
                 leg.remove()
     else:
-        ax.legend(fontsize=plot_attrs["leg_fs"], loc=plot_attrs["leg_loc"])
+        ax.legend(fontsize=leg_fs, loc=plot_attrs["leg_loc"])
 
 
 def simple_plot(ctx, draw_now=True):
     cache = ctx.cache
-    ax = ctx.ax
     if cache is None:
         return
+
+    if ctx.settings.get("plot_engine") == "pyqtgraph":
+        from .pg_engine import pg_simple_plot
+        pg_simple_plot(ctx)
+        return
+
+    ax = ctx.ax
+    zoom_key = ("matplotlib", id(cache))
+    is_new_dataset = zoom_key != ctx._last_zoomed_key
+    prev_xlim = None if is_new_dataset else ax.get_xlim()
+    prev_ylim = None if is_new_dataset else ax.get_ylim()
+
     ax.clear()
     ax.axhline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
 
@@ -152,8 +172,8 @@ def simple_plot(ctx, draw_now=True):
             mean_thb = thb.mean(axis=0)
             ln, = ax.plot(x, mean_thb, color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
             decim_lines.append((ln, x, mean_thb))
-        ax.set_ylabel("Delta Concentration (uM)", fontweight='bold')
-        ax.set_title(f"NIRS — {cache['store']}", fontweight='bold', pad=15)
+        y_label = "Delta Concentration (uM)"
+        title = f"NIRS — {cache['store']}"
         x_label = "Time (s)"
         n_snap_lines = 3 if 'thb' in cache else 2
     elif cache.get('source') == 'Generic':
@@ -166,8 +186,8 @@ def simple_plot(ctx, draw_now=True):
             ln, = ax.plot(xv, yv, 'o-', lw=1.8, markersize=4,
                            color=_GEN_COLORS[i % len(_GEN_COLORS)], label=col_name)
             decim_lines.append((ln, xv, yv))
-        ax.set_ylabel("Value", fontweight='bold')
-        ax.set_title(cache['store'], fontweight='bold', pad=15)
+        y_label = "Value"
+        title = cache['store']
         x_label = cache.get('x_label', 'X')
         n_snap_lines = len(cache['y_columns'])
     else:
@@ -178,12 +198,15 @@ def simple_plot(ctx, draw_now=True):
         ln, = ax.plot(cache['x'], data_to_plot, color=color_choice,
                        lw=1.5, alpha=0.8, label=label_text)
         decim_lines.append((ln, cache['x'], data_to_plot))
-        ax.set_ylabel("Amplitude", fontweight='bold')
-        ax.set_title(f"{label_text} — {cache['store']}", fontweight='bold', pad=15)
+        y_label = "Amplitude"
+        title = f"{label_text} — {cache['store']}"
         x_label = "Time (s)"
         n_snap_lines = 1
 
     ctx._decim_lines = decim_lines
+    ctx._last_title = title
+    ctx._last_xlabel = x_label
+    ctx._last_ylabel = y_label
     # ax.clear() drops any previously connected callbacks, so this must be
     # reconnected on every redraw. Once wired, every future pan/zoom/reset
     # (all of which go through ax.set_xlim somewhere) automatically keeps
@@ -192,9 +215,16 @@ def simple_plot(ctx, draw_now=True):
     ax.callbacks.connect('xlim_changed', lambda _ax: update_decimated_lines(ctx))
 
     _update_plot_with_notes(ctx, cache['markers'])
+    ax.set_title(title, fontweight='bold', pad=15)
     ax.set_xlabel(x_label, fontweight='bold')
+    ax.set_ylabel(y_label, fontweight='bold')
     ax.legend(loc='upper left', fontsize=ctx.plot_attrs["leg_fs"])
-    ax.set_xlim(cache['x'][0], cache['x'][-1])
+    if is_new_dataset:
+        ax.set_xlim(cache['x'][0], cache['x'][-1])
+        ctx._last_zoomed_key = zoom_key
+    else:
+        ax.set_xlim(prev_xlim)
+        ax.set_ylim(prev_ylim)
     update_decimated_lines(ctx)  # belt-and-suspenders in case xlim didn't change
     _apply_plot_attrs(ctx)
 
@@ -215,9 +245,30 @@ def simple_plot(ctx, draw_now=True):
         ctx._hover_bg = ctx.canvas.copy_from_bbox(ctx.fig.bbox)
 
 
+def set_grid_visibility(ctx, show):
+    """Toggle grid lines only — no clear/rebuild, so nothing about the
+    current view or items changes (a full simple_plot() redraw for this
+    was visibly flashing: PyQtGraph's engine re-adds every line and
+    re-measures/re-applies margins on every call, which briefly shows
+    intermediate states before settling)."""
+    ctx.show_grid = bool(show)
+    if ctx.cache is None:
+        return
+    if ctx.settings.get("plot_engine") == "pyqtgraph":
+        from .pg_engine import pg_set_grid_visibility
+        pg_set_grid_visibility(ctx)
+        return
+    ctx.ax.grid(ctx.show_grid, linestyle=':', alpha=0.4, color='gray')
+    ctx.canvas.draw_idle()
+
+
 def export_canvas_action(ctx):
     if ctx.cache is None:
         show_error(ctx, "No plot to export.")
+        return
+    if ctx.settings.get("plot_engine") == "pyqtgraph":
+        from .pg_engine import pg_export_view
+        pg_export_view(ctx)
         return
     file_path, _ = QFileDialog.getSaveFileName(
         ctx.win, "Export View", f"{ctx.cache['store']}_view.png",

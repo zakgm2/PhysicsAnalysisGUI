@@ -27,6 +27,7 @@ def default_plot_attrs():
         "leg_fs":      14,
         "leg_loc":     "upper left",
         "leg_entries": None,
+        "bold":        True,
     }
 
 
@@ -35,7 +36,8 @@ def default_settings():
     return {
         "default_folder":      desktop if os.path.isdir(desktop) else os.path.expanduser("~"),
         "decimate_max_points": 2000,
-        "background_loading":  False,
+        "background_loading":  True,
+        "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph"
     }
 
 
@@ -56,6 +58,14 @@ class AppState:
         self.canvas = None
         self.rect_selector = None
 
+        # PyQtGraph (GPU) engine — only populated if that engine is used
+        self.stacked_plot_widget = None  # QStackedWidget holding both canvases
+        self.pg_widget = None
+        self.pg_plot_item = None
+        self.pg_viewbox = None
+        self.pg_lines = []            # (PlotDataItem, full_x, full_y)
+        self.pg_hover_scatter = None
+
         # Toolbar widgets (assigned in ui/toolbar.py)
         self.plot_type_combo = None
         self.window_entry = None
@@ -68,6 +78,15 @@ class AppState:
         self.show_corrected = True
         self.show_grid = True
         self.plot_attrs = default_plot_attrs()
+
+        # (engine, id(cache)) the view was last reset-to-fit for. Redraws
+        # triggered by things that aren't a fresh data load (grid toggle,
+        # marker add/edit, attribute changes) compare against this so they
+        # can preserve the current zoom/pan instead of snapping back to the
+        # full-data view every time — an actual new dataset OR switching
+        # engines (the other engine's view never had valid data in it)
+        # resets it.
+        self._last_zoomed_key = None
 
         # Marker mode
         self.marker_mode = False
@@ -95,6 +114,14 @@ class AppState:
 
         # Settings (Options dialog)
         self.settings = default_settings()
+
+        # Engine-agnostic cache of the computed default title/labels and
+        # legend entry order, so Edit Attributes can read/apply consistent
+        # values regardless of which engine actually rendered them.
+        self._last_title = ""
+        self._last_xlabel = ""
+        self._last_ylabel = ""
+        self._legend_entries = []  # list of label strings, in plotted order
 
         # Background loading (Options: "Load data files on a background thread")
         self._bg_thread = None

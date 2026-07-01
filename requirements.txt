@@ -3,4 +3,4 @@ matplotlib
 scipy
 openpyxl
 PyQt6
-PhysicsLibrary
+ZaksPhysicsLibrary
