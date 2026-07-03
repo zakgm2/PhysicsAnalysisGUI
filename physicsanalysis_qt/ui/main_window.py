@@ -40,13 +40,27 @@ class _PlotStack(QStackedWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         ctx = self._ctx
-        sync_pg_margins(ctx)
-        if ctx.settings.get("plot_engine") == "pyqtgraph" and ctx.cache is not None:
-            self._timer.start(150)
+        if ctx.cache is None:
+            return
+        # Cheap margin + font sync on every tick (reuses the last measured
+        # axis size, single pass, no flash-prone zero-margin probe, and no
+        # touching line data) so the plot area and title/axis/legend text
+        # track the widget size live and continuously during the drag,
+        # matching how matplotlib's own canvas already redraws live. The
+        # accurate two-pass reprobe + full data replot are debounced to
+        # once after the drag settles, since both are more expensive.
+        if ctx.settings.get("plot_engine") == "pyqtgraph":
+            from ..pg_engine import pg_refresh_fonts
+            pg_refresh_fonts(ctx)
+        sync_pg_margins(ctx, reprobe=False)
+        self._timer.start(150)
 
     def _replot(self):
         from ..pg_engine import pg_simple_plot
-        pg_simple_plot(self._ctx)
+        ctx = self._ctx
+        sync_pg_margins(ctx, reprobe=True)
+        if ctx.settings.get("plot_engine") == "pyqtgraph":
+            pg_simple_plot(ctx)
 
 
 def build_main_window(ctx):

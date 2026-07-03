@@ -7,29 +7,47 @@ marker controls, view controls.
 
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QPushButton, QMenu, QCheckBox, QLabel,
-    QComboBox, QLineEdit,
+    QComboBox,
 )
 
-from ..loaders.tdt import open_folder
-from ..loaders.oxysoft import open_file
-from ..loaders.generic import launch_generic_file_loader
+from ..loaders.tdt import open_folder, reload_folder
+from ..loaders.oxysoft import open_file, reload_file
+from ..loaders.generic import launch_generic_file_loader, reload_generic
 from ..loaders.pt2 import launch_pt2_viewer
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers
 from ..interaction import reset_zoom
-from ..plotting import simple_plot, export_canvas_action, set_grid_visibility
+from ..plotting import export_canvas_action, set_grid_visibility
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
+from ..toasts import show_error
+from ..analysis.window_settings import init_window_settings, open_window_dialog, _window_button_text
 
 
 def _toggle_grid(ctx, state):
     set_grid_visibility(ctx, state)
 
 
-def _undo_last_marker(ctx):
-    if ctx.cache and ctx.cache['markers']:
-        ctx.cache['markers'].pop()
-        simple_plot(ctx)
+def _reload_current(ctx):
+    """Re-read whatever's currently loaded from disk, in place — not the
+    same thing as Open, which always prompts a file picker. Falls back to
+    Open only when nothing's loaded yet (there's nothing to reload)."""
+    if ctx.cache is None:
+        open_folder(ctx)
+        return
+    source = ctx.cache.get('source')
+    path = ctx.cache.get('source_path')
+    if not path:
+        show_error(ctx, "Nothing to reload — no source file/folder on record.")
+        return
+    if source == 'TDT':
+        reload_folder(ctx, path)
+    elif source == 'Oxysoft':
+        reload_file(ctx, path)
+    elif source == 'Generic':
+        reload_generic(ctx, path)
+    else:
+        show_error(ctx, f"Reload isn't supported for '{source}' data.")
 
 
 def build_toolbar(ctx):
@@ -47,7 +65,7 @@ def build_toolbar(ctx):
     layout.addWidget(open_menu_btn)
 
     btn_reload = QPushButton("Reload")
-    btn_reload.clicked.connect(lambda: open_folder(ctx))
+    btn_reload.clicked.connect(lambda: _reload_current(ctx))
     layout.addWidget(btn_reload)
 
     layout.addWidget(QLabel("|"))
@@ -63,20 +81,16 @@ def build_toolbar(ctx):
     ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit"])
     layout.addWidget(ctx.plot_type_combo)
 
-    layout.addWidget(QLabel("Window (s):"))
-    ctx.window_entry = QLineEdit("30")
-    ctx.window_entry.setFixedWidth(50)
-    layout.addWidget(ctx.window_entry)
+    init_window_settings(ctx)
+    ctx.btn_window = QPushButton(_window_button_text(ctx))
+    ctx.btn_window.clicked.connect(lambda: open_window_dialog(ctx))
+    layout.addWidget(ctx.btn_window)
 
     layout.addWidget(QLabel("|"))
 
     ctx.btn_add_marker = QPushButton("Add Marker")
     ctx.btn_add_marker.clicked.connect(lambda: toggle_marker_mode(ctx))
     layout.addWidget(ctx.btn_add_marker)
-
-    btn_undo_marker = QPushButton("Undo Last")
-    btn_undo_marker.clicked.connect(lambda: _undo_last_marker(ctx))
-    layout.addWidget(btn_undo_marker)
 
     btn_save_markers = QPushButton("Save Markers")
     btn_save_markers.clicked.connect(lambda: save_markers(ctx))

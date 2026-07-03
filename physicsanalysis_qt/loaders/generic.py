@@ -149,6 +149,18 @@ def launch_generic_file_loader(ctx):
     if not path:
         return
     ctx.last_dir = os.path.dirname(path)
+    _load_generic_path(ctx, path)
+
+
+def reload_generic(ctx, path):
+    """Re-run the load for a file already on disk — no file dialog, used
+    by the toolbar's Reload button. Still shows the table/column picker
+    (sub-tables or columns may have changed since the file was edited),
+    just skips re-choosing which file to open."""
+    _load_generic_path(ctx, path)
+
+
+def _load_generic_path(ctx, path):
     try:
         tables = pl.load_any_file(path)
     except Exception as e:

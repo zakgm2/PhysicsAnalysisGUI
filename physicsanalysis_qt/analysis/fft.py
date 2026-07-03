@@ -21,12 +21,14 @@ from .dispatch import get_window
 def launch_fft(ctx, center_t):
     if ctx.cache is None:
         return
-    window = get_window(ctx)
+    pre, post = get_window(ctx)
     cache = ctx.cache
     fs = cache['fs']
 
     dlg = QDialog(ctx.win)
-    dlg.setWindowTitle(f"FFT — {cache['store']}  |  centre {center_t:.1f}s  |  window {window:.0f}s")
+    dlg.setWindowTitle(
+        f"FFT — {cache['store']}  |  centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s"
+    )
     dlg.resize(700, 650)
     layout = QVBoxLayout(dlg)
 
@@ -41,7 +43,7 @@ def launch_fft(ctx, center_t):
             (o2hb, ax_o2, '#CC0000', 'Mean O2Hb'),
             (hhb, ax_hh, '#0033CC', 'Mean HHb'),
         ]:
-            freqs, power, _, _ = pl.compute_fft_slice(x, sig, center_t, fs, window=window)
+            freqs, power, _, _ = pl.compute_fft_slice(x, sig, center_t, fs, pre=pre, post=post)
             if len(freqs) > 0:
                 ax_f.plot(freqs, power, color=color, lw=1.5)
                 pl.annotate_fft_peaks(ax_f, freqs, power, color)
@@ -59,7 +61,7 @@ def launch_fft(ctx, center_t):
             signal = cache['corr'] if ctx.show_corrected else cache['raw']
         else:
             signal = next(iter(cache['y_columns'].values()))
-        freqs, power, _, _ = pl.compute_fft_slice(cache['x'], signal, center_t, fs, window=window)
+        freqs, power, _, _ = pl.compute_fft_slice(cache['x'], signal, center_t, fs, pre=pre, post=post)
         fig_fft = Figure(figsize=(8, 4), dpi=100)
         ax_f = fig_fft.add_subplot(111)
         if len(freqs) > 0:
@@ -72,7 +74,7 @@ def launch_fft(ctx, center_t):
         ax_f.set_xlim(0.05, fs / 2)
         ax_f.autoscale(axis='y')
 
-    fig_fft.suptitle(f"centre {center_t:.1f}s  |  window {window:.0f}s", fontsize=10, color='gray')
+    fig_fft.suptitle(f"centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s", fontsize=10, color='gray')
     fig_fft.tight_layout(rect=[0, 0.03, 1, 0.97])
     canvas_fft = FigureCanvasQTAgg(fig_fft)
     layout.addWidget(canvas_fft)

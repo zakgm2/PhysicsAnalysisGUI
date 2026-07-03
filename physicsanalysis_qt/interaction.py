@@ -320,6 +320,16 @@ def zoom_factory(ctx, base_scale=1.2):
 
 
 def on_resize(ctx, event):
+    # Matplotlib's canvas already redraws live and continuously as the
+    # widget resizes (fixed subplot fractions reposition the axes box for
+    # free), but title/axis-label/legend font sizes are fixed point values
+    # that don't rescale on their own — re-applying them here on every tick
+    # keeps text scaling smoothly with the window instead of only jumping
+    # once on the next full simple_plot(). Cheap: no clear/rebuild, just
+    # font sizes + a draw_idle.
+    if ctx.cache is not None and ctx.ax is not None:
+        plotting._apply_plot_attrs(ctx)
+        ctx.canvas.draw_idle()
     ctx._hover_bg = None
     _schedule_hover_bg_refresh(ctx, delay_ms=250)
 
