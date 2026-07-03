@@ -3,4 +3,5 @@ matplotlib
 scipy
 openpyxl
 PyQt6
+pyqtgraph
 ZaksPhysicsLibrary

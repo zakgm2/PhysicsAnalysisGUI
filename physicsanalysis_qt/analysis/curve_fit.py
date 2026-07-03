@@ -81,7 +81,8 @@ class CurveFitDialog(QDialog):
         ctrl.addWidget(recalc_btn)
 
         ctrl.addWidget(QLabel("Window (s):"))
-        self.win_entry = QLineEdit(str(int(get_window(ctx))))
+        pre, post = get_window(ctx)
+        self.win_entry = QLineEdit(str(int(pre + post)))
         self.win_entry.setFixedWidth(50)
         ctrl.addWidget(self.win_entry)
         ctrl.addStretch(1)

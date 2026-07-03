@@ -5,12 +5,15 @@ GPU-accelerated (OpenGL-backed rendering pipeline, CPU-side compiled
 downsampling) main-plot engine using PyQtGraph, selectable as an
 alternative to the matplotlib engine via Options -> Plot engine.
 
-Scope: the MAIN plot view only (pan/zoom, hover snap + coordinate
-readout, event markers, rectangle-select zoom). FFT/PETH/Curve Fit/PT2
-windows stay matplotlib-rendered regardless of engine — they open fresh
-small figures each time and aren't the performance bottleneck; both
-analysis_type() and launch_curve_fit() are cache-driven (not tied to
-matplotlib Line2D objects), so they work unchanged from either engine.
+Scope: building/rendering the MAIN plot view only (font/margin scaling,
+lines, markers, legend, grid, export). Mouse interaction (hover snap,
+click dispatch, right-click marker menu) lives in pg_interaction.py —
+mirrors the matplotlib engine's own plotting.py / interaction.py split.
+FFT/PETH/Curve Fit/PT2 windows stay matplotlib-rendered regardless of
+engine — they open fresh small figures each time and aren't the
+performance bottleneck; both analysis_type() and launch_curve_fit() are
+cache-driven (not tied to matplotlib Line2D objects), so they work
+unchanged from either engine.
 
 PyQtGraph's PlotDataItem does its own compiled min/max downsampling
 (setDownsampling) at paint time, which is why this engine doesn't need
@@ -24,9 +27,8 @@ import pyqtgraph.exporters  # noqa: F401 — registers pg.exporters.ImageExporte
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFileDialog
 
-from .context import _MARKER_COLORS
 from .fonts import main_plot_scale
-from .markers import MarkerDialog, place_marker, find_nearest_marker
+from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
 from .toasts import show_error, show_window_toast
 
 
@@ -66,8 +68,8 @@ def build_pg_widget(ctx):
     plot_item.addItem(ctx.pg_hover_scatter)
     ctx.pg_hover_scatter.hide()
 
-    widget.scene().sigMouseMoved.connect(lambda pos: _on_mouse_moved(ctx, pos))
-    widget.scene().sigMouseClicked.connect(lambda ev: _on_mouse_clicked(ctx, ev))
+    widget.scene().sigMouseMoved.connect(lambda pos: on_pg_mouse_moved(ctx, pos))
+    widget.scene().sigMouseClicked.connect(lambda ev: on_pg_mouse_clicked(ctx, ev))
     return widget
 
 
@@ -94,7 +96,21 @@ def _title_row_height(title_fs):
     return max(30, round(title_fs * 2.2))
 
 
-def sync_pg_margins(ctx):
+def _set_legend_font_size(legend, leg_fs):
+    """LegendItem.setLabelTextSize() only stores the new size in opts —
+    it never re-renders the already-displayed label text (a pyqtgraph
+    bug: LabelItem.setAttr() just updates opts, only setText() actually
+    rebuilds the HTML and re-measures the item), so the legend visually
+    never resizes. Re-set each label's text explicitly to force it."""
+    if legend is None:
+        return
+    size = f'{leg_fs}pt'
+    legend.opts['labelTextSize'] = size
+    for _, label in legend.items:
+        label.setText(label.text, size=size)
+
+
+def sync_pg_margins(ctx, reprobe=True):
     """Make the PlotItem's actual data area (viewbox) the same pixel size
     as matplotlib's axes box would be at this widget size.
 
@@ -109,12 +125,22 @@ def sync_pg_margins(ctx):
     noticeably smaller than matplotlib's for the same widget size.
 
     Fix: measure how much width/height pg's own left/bottom axes actually
-    consume (two-pass — set a first-guess margin, force a layout pass,
-    read the axes' real geometry) and only reserve the remainder as
-    margin. The top margin is similarly reduced by the title row's
-    height (see pg_simple_plot) since that row is also additional space,
-    not included in PlotItem's own axis auto-sizing. There's no axis on
-    the right, so that side needs no such correction."""
+    consume, and only reserve the remainder as margin. The top margin is
+    similarly reduced by the title row's height (see pg_simple_plot) since
+    that row is also additional space, not included in PlotItem's own axis
+    auto-sizing. There's no axis on the right, so that side needs no such
+    correction.
+
+    reprobe=True (default) does a two-pass measurement — zero the margins,
+    force a layout pass, read the axes' real geometry — which is accurate
+    but briefly flashes the plot to fill the whole widget for one frame
+    unless repaints are frozen around it, so it's relatively expensive.
+    reprobe=False reuses the last measured axis size instead of
+    re-measuring, so it's cheap enough to call on every tick of a live
+    resize drag (axis label width rarely changes mid-drag — only the tick
+    values' digit count could shift it, a one-pixel-scale concern) and
+    keeps the plot area tracking the widget size continuously instead of
+    jumping once after the drag settles."""
     plot_item = ctx.pg_plot_item
     if plot_item is None or ctx.pg_widget is None or ctx.fig is None:
         return
@@ -129,18 +155,31 @@ def sync_pg_margins(ctx):
     target_top = max(0, round((1 - sp.top) * h) - _title_row_height(title_fs))
     target_bottom = round(sp.bottom * h)
 
-    # Pass 1: zero out left/bottom so the axes' geometry reflects only
-    # what they themselves need, not our margin on top of it.
-    plot_item.setContentsMargins(0, target_top, 0, 0)
-    plot_item.layout.activate()
-    left_axis_w = plot_item.getAxis('left').geometry().width()
-    bottom_axis_h = plot_item.getAxis('bottom').geometry().height()
+    if reprobe or ctx._pg_axis_probe is None:
+        # Pass 1 briefly zeroes out left/bottom margins to measure the
+        # axes' real geometry, which would otherwise flash the plot to fill
+        # the whole widget for one frame before pass 2 corrects it. Freeze
+        # repaints for the probe so that intermediate state never shows.
+        ctx.pg_widget.setUpdatesEnabled(False)
+        try:
+            plot_item.setContentsMargins(0, target_top, 0, 0)
+            plot_item.layout.activate()
+            left_axis_w = plot_item.getAxis('left').geometry().width()
+            bottom_axis_h = plot_item.getAxis('bottom').geometry().height()
+            ctx._pg_axis_probe = (left_axis_w, bottom_axis_h)
 
-    # Pass 2: reserve only the leftover, so axis + margin together equal
-    # matplotlib's target offset.
-    left = max(0, target_left - round(left_axis_w))
-    bottom = max(0, target_bottom - round(bottom_axis_h))
-    plot_item.setContentsMargins(left, target_top, target_right, bottom)
+            left = max(0, target_left - round(left_axis_w))
+            bottom = max(0, target_bottom - round(bottom_axis_h))
+            plot_item.setContentsMargins(left, target_top, target_right, bottom)
+        finally:
+            ctx.pg_widget.setUpdatesEnabled(True)
+    else:
+        # Cheap path: reuse the last measured axis size, single pass, no
+        # flash-prone zero-margin step — safe to call every resize tick.
+        left_axis_w, bottom_axis_h = ctx._pg_axis_probe
+        left = max(0, target_left - round(left_axis_w))
+        bottom = max(0, target_bottom - round(bottom_axis_h))
+        plot_item.setContentsMargins(left, target_top, target_right, bottom)
 
 
 def pg_simple_plot(ctx):
@@ -271,7 +310,7 @@ def pg_simple_plot(ctx):
                         **{'font-size': f'{xlabel_fs}pt', 'font-weight': weight, 'color': '#000'})
     plot_item.setLabel('left', ylabel_text,
                         **{'font-size': f'{ylabel_fs}pt', 'font-weight': weight, 'color': '#000'})
-    legend.setLabelTextSize(f'{leg_fs}pt')
+    _set_legend_font_size(legend, leg_fs)
 
     plot_item.showGrid(x=ctx.show_grid, y=ctx.show_grid, alpha=0.3)
     if is_new_dataset:
@@ -281,6 +320,35 @@ def pg_simple_plot(ctx):
         (xr, yr) = prev_range
         plot_item.vb.setRange(xRange=xr, yRange=yr, padding=0)
     sync_pg_margins(ctx)
+
+
+def pg_refresh_fonts(ctx):
+    """Re-apply title/axis-label/legend font sizes for the current widget
+    size without touching line data, markers, grid, or view range — cheap
+    enough to call on every tick of a live resize drag (see sync_pg_margins'
+    reprobe=False path, which this mirrors) so text keeps scaling smoothly
+    instead of jumping once after the drag settles."""
+    plot_item = ctx.pg_plot_item
+    if plot_item is None or ctx.cache is None:
+        return
+    plot_attrs = ctx.plot_attrs
+    title_text = plot_attrs["title"] or ctx._last_title or ""
+    xlabel_text = plot_attrs["xlabel"] or ctx._last_xlabel or ""
+    ylabel_text = plot_attrs["ylabel"] or ctx._last_ylabel or ""
+
+    title_fs, xlabel_fs, ylabel_fs, leg_fs = _scaled_font_sizes(ctx)
+    weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
+
+    plot_item.setTitle(title_text, size=f'{title_fs}pt', color='#000',
+                        **{'font-weight': weight})
+    plot_item.titleLabel.setMaximumHeight(16777215)
+    plot_item.layout.setRowFixedHeight(0, _title_row_height(title_fs))
+
+    plot_item.setLabel('bottom', xlabel_text,
+                        **{'font-size': f'{xlabel_fs}pt', 'font-weight': weight, 'color': '#000'})
+    plot_item.setLabel('left', ylabel_text,
+                        **{'font-size': f'{ylabel_fs}pt', 'font-weight': weight, 'color': '#000'})
+    _set_legend_font_size(plot_item.legend, leg_fs)
 
 
 def pg_set_grid_visibility(ctx):
@@ -304,126 +372,3 @@ def pg_export_view(ctx):
         exporter = pg.exporters.ImageExporter(ctx.pg_plot_item)
         exporter.export(file_path)
         show_window_toast(ctx, "View Exported")
-
-
-def _nearest_index(full_x, x):
-    return int(np.abs(full_x - x).argmin())
-
-
-def _on_mouse_moved(ctx, scene_pos):
-    plot_item = ctx.pg_plot_item
-    if plot_item is None or ctx.cache is None or not ctx.pg_lines:
-        return
-    if not plot_item.sceneBoundingRect().contains(scene_pos):
-        ctx.pg_hover_scatter.hide()
-        ctx.status_bar.showMessage("X: -- | Y: -- | Pt: --")
-        return
-
-    view_pos = ctx.pg_viewbox.mapSceneToView(scene_pos)
-    target_x, target_y = view_pos.x(), view_pos.y()
-
-    points = []
-    best_idx = None
-    best_line_label = None
-    best_y_dist = float('inf')
-    for item, fx, fy in ctx.pg_lines:
-        if len(fx) == 0:
-            continue
-        idx = _nearest_index(fx, target_x)
-        snap_x, snap_y = float(fx[idx]), float(fy[idx])
-        points.append((snap_x, snap_y))
-        y_dist = abs(snap_y - target_y)
-        if y_dist < best_y_dist:
-            best_y_dist = y_dist
-            best_idx = idx
-            best_line_label = item.name()
-
-    if points:
-        ctx.pg_hover_scatter.setData(pos=points)
-        ctx.pg_hover_scatter.show()
-
-    x_label = plot_item.getAxis('bottom').labelText or "X"
-    y_label = plot_item.getAxis('left').labelText or "Y"
-    pt_str = str(best_idx) if best_idx is not None else "--"
-    ctx.status_bar.showMessage(f"{x_label}: {target_x:.2f} | {y_label}: {target_y:.4f} | Pt: {pt_str}")
-
-
-def _on_mouse_clicked(ctx, ev):
-    from .analysis.dispatch import analysis_type
-    from .analysis.curve_fit import launch_curve_fit
-
-    plot_item = ctx.pg_plot_item
-    if plot_item is None or ctx.cache is None:
-        return
-    if not plot_item.sceneBoundingRect().contains(ev.scenePos()):
-        return
-
-    view_pos = ctx.pg_viewbox.mapSceneToView(ev.scenePos())
-    x = view_pos.x()
-
-    if ev.double() and ev.button() == Qt.MouseButton.LeftButton:
-        ctx.slope_clicks.clear()
-        analysis_type(ctx, x)
-        return
-
-    if ctx.marker_mode:
-        if ev.button() == Qt.MouseButton.LeftButton:
-            place_marker(ctx, x)
-        elif ev.button() == Qt.MouseButton.RightButton:
-            _right_click_marker_menu(ctx, x, ev.screenPos())
-        return
-
-    if ev.button() == Qt.MouseButton.RightButton:
-        if find_nearest_marker(ctx, x) is not None:
-            _right_click_marker_menu(ctx, x, ev.screenPos())
-        return
-
-    if ctx.plot_type_combo.currentText() == "Curve Fit" and ev.button() == Qt.MouseButton.LeftButton:
-        if not ctx.pg_lines:
-            return
-        # Pick whichever tracked line is closest in y to the click, same
-        # heuristic the matplotlib engine uses for active_snap_line.
-        best_line, best_dist = None, float('inf')
-        for item, fx, fy in ctx.pg_lines:
-            idx = _nearest_index(fx, x)
-            dist = abs(float(fy[idx]) - view_pos.y())
-            if dist < best_dist:
-                best_dist = dist
-                best_line = (fx, fy)
-        if best_line is None:
-            show_error(ctx, "No active data trace found to analyze.")
-            return
-        fx, _ = best_line
-        idx = _nearest_index(fx, x)
-        ctx.slope_clicks.append((idx, x))
-        show_window_toast(ctx, f"Point {len(ctx.slope_clicks)}: {x:.2f}s")
-        if len(ctx.slope_clicks) == 2:
-            launch_curve_fit(ctx, None, ctx.slope_clicks[0], ctx.slope_clicks[1])
-            ctx.slope_clicks.clear()
-
-
-def _right_click_marker_menu(ctx, xdata, global_pos):
-    from PyQt6.QtWidgets import QMenu
-    from PyQt6.QtCore import QPoint
-
-    idx = find_nearest_marker(ctx, xdata)
-    if idx is None:
-        return
-    marker = ctx.cache['markers'][idx]
-
-    menu = QMenu(ctx.win)
-    act_rename = menu.addAction(f"Rename '{marker['label']}'")
-    act_delete = menu.addAction(f"Delete '{marker['label']}'")
-    chosen = menu.exec(QPoint(int(global_pos.x()), int(global_pos.y())))
-
-    if chosen == act_rename:
-        dlg = MarkerDialog(ctx.win, "Edit Marker", marker['label'],
-                            marker.get('color', 'green'), marker.get('fontsize', 8))
-        from PyQt6.QtWidgets import QDialog
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            label, color, fontsize = dlg.values()
-            marker['label'], marker['color'], marker['fontsize'] = label, color, fontsize
-            pg_simple_plot(ctx)
-    elif chosen == act_delete:
-        ctx.cache['markers'].pop(idx)
-        pg_simple_plot(ctx)

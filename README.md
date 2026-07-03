@@ -1,19 +1,14 @@
 # Physics Analysis GUI
 
-A desktop application for loading, visualising, and analysing physics lab data.
+A PyQt6 desktop application for loading, visualising, and analysing physics lab data.
 
 Supports TDT fibre photometry recordings, Oxysoft / Artinis NIRS exports, generic tabular data (Excel, CSV, TSV, plain text), and Terranova Prospa EFNMR/MRI `.pt2` images.
 
-Two interchangeable GUI implementations are included:
+Built on shared logic from [PhysicsLibrary](https://github.com/zakgm2/PhysicsLibrary) — this repo is the widget/window layer.
 
-| File | Framework | Status |
-|------|-----------|--------|
-| `PhysicsAnalysisGUI.py` | tkinter | Stable, full feature set |
-| `run_qt.py` | PyQt6 | Full feature parity with the tkinter version, plus an optional GPU-accelerated (PyQtGraph) main plot |
+The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-accelerated, handles large recordings much better) — switch anytime in **Options**. FFT/PETH/Curve Fit/PT2 windows always use matplotlib regardless of the main-plot engine.
 
-Both share the same underlying logic from [PhysicsLibrary](https://github.com/zakgm2/PhysicsLibrary) — only the widget/window layer differs.
-
-The PyQt6 version's main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-accelerated, handles large recordings much better) — switch anytime in **Options**. FFT/PETH/Curve Fit/PT2 windows always use matplotlib regardless of the main-plot engine.
+> A tkinter version of this GUI existed prior to v2.2.0 and has been removed — the PyQt6 version now has full feature parity plus the GPU engine, Options dialog, and background loading. Its history remains in `git log -- PhysicsAnalysisGUI.py` if ever needed.
 
 ---
 
@@ -27,12 +22,13 @@ The PyQt6 version's main plot can render with either **matplotlib** (CPU) or **P
 - **FFT viewer** — frequency analysis window with automatic peak annotation
 - **PETH / Z-score** — peri-event time histogram for TDT data
 - **PT2 image viewer** — colormap selector, live title editing, PNG/PDF/SVG export
-- **Markers** — click to place event markers with custom name, colour, and font size; right-click to edit or delete; auto-saved as a `.markers.json` sidecar; TDT/Oxysoft native event markers load automatically
+- **Markers** — a fresh load starts with no markers on screen; use **Add Marker** to bulk-add auto-detected event markers by store (multi-select, add/remove in one action), or configure a custom name/colour/font size once and stamp repeated markers Snipping-Tool style (click, click, click, then stop); a separate multi-select **Remove Markers** list handles batch cleanup; right-click a marker to rename/delete it individually; markers auto-save as a `.markers.json` sidecar
+- **Analysis window** — a single **Window** button opens a dialog for the pre/post seconds around an FFT/PETH/Curve Fit click: symmetric (one total size, split evenly) or asymmetric (independent before/after, e.g. 10s before, 20s after)
 - **Edit Attributes** — customise plot title, axis labels, font sizes, and legend entries; changes persist across zoom/pan/hover
-- **Golden-ratio font scaling** — all figure text scales proportionally to figure size
+- **Golden-ratio font scaling** — all figure text scales proportionally to figure/widget size and stays live during window resize, on both plot engines
 - **Grid toggle** — show/hide background grid from the toolbar
 - **TSI Fit Factor** — extracted automatically from Oxysoft files and shown in the legend
-- **Options dialog** (PyQt6 version) — default folder for Open dialogs, main-plot render decimation, background-thread loading, and CPU/GPU plot engine selection
+- **Options dialog** — default folder for Open dialogs, main-plot render decimation, background-thread loading, and CPU/GPU plot engine selection
 
 ---
 
@@ -51,18 +47,11 @@ cd PhysicsAnalysis
 pip install -r requirements.txt
 ```
 
-> **Note:** `tkinter` ships with the standard Python installer on Windows and macOS.
-> On Linux install it with `sudo apt install python3-tk`.
-
 ---
 
 ## Running
 
 ```bash
-# tkinter version
-python PhysicsAnalysisGUI.py
-
-# PyQt6 version
 python run_qt.py
 ```
 
@@ -89,8 +78,11 @@ python run_qt.py
 | Pan | Right-click drag |
 | Zoom to region | Left-click drag (rectangle select) |
 | Reset zoom | **Reset Zoom** button |
-| Place marker | Enable **Add Marker**, then left-click the plot |
-| Edit / delete marker | Right-click near a marker |
+| Place markers | **Add Marker** → *Place Custom Markers* → Start Placing, then left-click the plot repeatedly; click **Add Marker** again to stop |
+| Add auto-detected markers | **Add Marker** → *Add / Remove Auto-Detected Markers* → select store(s) → Add Selected |
+| Remove markers | **Add Marker** → *Remove Markers* → select marker(s) → Remove Selected |
+| Edit / delete a single marker | Right-click near it |
+| Set analysis window | **Window** button → symmetric size or independent before/after |
 | Fit curve | Select **Curve Fit** mode, click two points |
 | Run FFT / PETH | Select mode from dropdown, double-click the plot |
 
@@ -102,6 +94,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.2.0 | Redesigned opt-in marker workflow, asymmetric analysis window, live-resize fonts/margins, tkinter version removed |
 | 2.1.0 | PyQtGraph (GPU) plot engine option, Options dialog, background loading |
 | 2.0.0 | PyQt6 GUI port added alongside the tkinter version |
 | 1.3.0 | Golden-ratio proportional font sizing, resize-safe zoom |

@@ -2,7 +2,9 @@
 analysis/dispatch.py
 ----------------------
 Routes double-clicks on the main plot to the right analysis window, and
-the shared figure-export helper used by all of them.
+the shared figure-export helper used by all of them. get_window() (the
+pre/post seconds around a clicked event) lives in window_settings.py
+alongside the toolbar button + dialog that configure it.
 """
 
 import datetime
@@ -11,14 +13,7 @@ from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog
 
 from ..toasts import show_error, show_window_toast
-
-
-def get_window(ctx):
-    try:
-        val = float(ctx.window_entry.text())
-        return val if val > 0 else 30.0
-    except ValueError:
-        return 30.0
+from .window_settings import get_window  # noqa: F401 — re-exported: existing callers import get_window from here
 
 
 def export_figure_to_file(ctx, fig_obj, default_prefix, tracking_info=""):

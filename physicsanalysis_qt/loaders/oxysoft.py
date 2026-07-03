@@ -28,6 +28,13 @@ def open_file(ctx):
         _load_single_file(ctx, path)
 
 
+def reload_file(ctx, file_path):
+    """Re-run the load for a file already on disk — no file dialog, used
+    by the toolbar's Reload button to re-read the currently loaded
+    Oxysoft file from scratch instead of asking the user to pick it again."""
+    _load_single_file(ctx, file_path)
+
+
 def _load_single_file(ctx, file_path):
     from ..plotting import simple_plot
 
@@ -47,10 +54,12 @@ def _load_single_file(ctx, file_path):
             'hhb':             hhb,
             'fs':              ds.sample_rate,
             'fit_factor_mean': ds.metadata.get('fit_factor_mean'),
-            'markers': [
-                {"time": ev["sample"] / ds.sample_rate, "label": ev["label"], "color": "black"}
+            'detected_markers': [
+                {"time": ev["sample"] / ds.sample_rate, "label": ev["label"],
+                 "color": "black", "store": "Events"}
                 for ev in ds.events
             ],
+            'markers': [],
         }
         if 'thb' in ds.metadata:
             ctx.cache['thb'] = ds.metadata['thb']

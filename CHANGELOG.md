@@ -2,6 +2,36 @@
 
 ---
 
+## v2.2.0
+**New: redesigned marker workflow**
+- Fresh loads (TDT and Oxysoft) no longer auto-populate the plot with every detected event marker — a busy TDT recording can easily have a dozen+ epoc stores (I/O strobes, Tick, Epoch Event Storage, …) that used to overlap into an unreadable mess. Auto-detected markers are now kept separately (`detected_markers`) and only added when you ask for them.
+- **Add Marker** now opens a dialog instead of immediately entering placement mode:
+  - **Add / Remove Auto-Detected Markers** — multi-select one or more stores (ctrl/shift-click) and Add Selected or Remove Selected in one action.
+  - **Place Custom Markers** — configure a name/colour/font size once, then **Start Placing**: click the plot repeatedly to stamp markers with that config (Snipping-Tool style) until you toggle Add Marker off again — no more re-opening a dialog for every single marker.
+  - **Remove Markers** — a multi-select list of every marker currently on the plot (auto-detected or custom), with Select All + Remove Selected for fast batch cleanup.
+- Removed the "Undo Last" toolbar button — redundant now that removal is multi-select and immediate.
+
+**New: asymmetric analysis window**
+- The always-visible "Window (s)" field is now a single **Window** toolbar button showing the current setting, opening a small dialog: **Symmetric** (default, one "window size" field = the total span, split evenly before/after the event) or untick it for independent Before/After fields — e.g. 10s before an event, 20s after.
+- `PhysicsLibrary`'s `get_zscore_slice()`/`compute_fft_slice()` gained matching `pre`/`post` parameters (see PhysicsLibrary CHANGELOG).
+- Fixed PETH silently ignoring the window setting entirely — it hardcoded a 30s window and hardcoded plot axis ranges regardless of what was configured; it now honours the same Window setting FFT already did.
+
+**Fixes: resize smoothness (PyQtGraph engine)**
+- Fixed the PyQtGraph plot flashing to fill the whole widget for one frame on every resize and on any redraw (e.g. Edit Attributes) — its margin-measurement pass briefly zeroed out margins to probe axis geometry; repaints are now frozen for that probe so the intermediate state is never shown.
+- Resize is now smooth and live instead of snapping once after the drag settles: a cheap per-tick margin/font update (reusing the last-measured axis size, no flash-prone probe) runs on every resize event, with the more expensive accurate re-measurement + full replot debounced to once after the drag ends.
+- Matplotlib engine's title/axis-label/legend fonts now also rescale live during resize — previously only the plot area itself resized live; text stayed a fixed size until the next full redraw.
+- Fixed a genuine pyqtgraph bug where `LegendItem.setLabelTextSize()` never actually re-rendered the legend text (it only updated internal state) — legend font size now visibly updates by forcing each label's `setText()`.
+
+**Fixes: other**
+- Fixed **Reload** just re-opening the same file picker as **Open** — it now re-reads the currently loaded folder/file from disk in place instead. TDT/Oxysoft skip the dialog entirely; Generic (Excel/CSV/TSV) re-parses the same file and reopens the table/column picker (sub-tables or columns may have changed since last load), skipping only the file-choice step. Falls back to Open when nothing's loaded yet.
+
+**Cleanup**
+- Removed the legacy tkinter GUI (`PhysicsAnalysisGUI.py`) — the PyQt6 version (`run_qt.py`) is now the only supported app. Full tkinter history remains in git log for reference.
+- Split `pg_engine.py`'s mouse-interaction code (hover snap, click dispatch, right-click marker menu) into a new `pg_interaction.py`, mirroring the matplotlib engine's existing `plotting.py`/`interaction.py` split.
+- Added the missing `pyqtgraph` dependency to `requirements.txt`/`pyproject.toml` — it was already required by the GPU engine (added in v2.1.0) but never listed.
+
+---
+
 ## v2.1.0
 **New: PyQtGraph (GPU) plot engine**
 - The PyQt6 main plot can now render with either matplotlib (CPU) or PyQtGraph (GPU-accelerated), switchable anytime in the new **Options** dialog. Covers pan/zoom, hover snap + coordinate readout, event markers, and rectangle-select zoom. FFT/PETH/Curve Fit/PT2 windows always stay matplotlib-rendered — they open fresh, small figures each time and aren't the performance bottleneck.

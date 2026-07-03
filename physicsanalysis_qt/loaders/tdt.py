@@ -24,6 +24,13 @@ def open_folder(ctx):
         _load_folder(ctx, path)
 
 
+def reload_folder(ctx, folder_path):
+    """Re-run the load for a folder already on disk — no file dialog,
+    used by the toolbar's Reload button to re-read the currently loaded
+    TDT folder from scratch instead of asking the user to pick it again."""
+    _load_folder(ctx, folder_path)
+
+
 def _load_folder(ctx, folder_path):
     from ..plotting import simple_plot
 
@@ -52,7 +59,8 @@ def _load_folder(ctx, folder_path):
             'raw':         result['raw'],
             'corr':        result['corr'],
             'fs':          result['fs'],
-            'markers':     result.get('markers', []),
+            'detected_markers': result.get('markers', []),
+            'markers':     [],
         }
         load_markers_from_sidecar(ctx)
         simple_plot(ctx)

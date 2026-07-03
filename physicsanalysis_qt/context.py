@@ -64,12 +64,19 @@ class AppState:
         self.pg_plot_item = None
         self.pg_viewbox = None
         self.pg_lines = []            # (PlotDataItem, full_x, full_y)
+        self._pg_axis_probe = None    # (left_axis_w, bottom_axis_h) cache — see sync_pg_margins
         self.pg_hover_scatter = None
 
         # Toolbar widgets (assigned in ui/toolbar.py)
         self.plot_type_combo = None
-        self.window_entry = None
+        self.btn_window = None
         self.btn_add_marker = None
+
+        # Analysis window (pre/post seconds around a clicked event) — see
+        # analysis/window_settings.py for the toolbar button + dialog
+        self.window_pre = None
+        self.window_post = None
+        self.window_symmetric = True
 
         # Data
         self.cache = None
@@ -90,6 +97,7 @@ class AppState:
 
         # Marker mode
         self.marker_mode = False
+        self.marker_stamp = {"label": "Marker", "color": "green", "fontsize": 8}
 
         # Hover / blit
         self.tracker_dots = []

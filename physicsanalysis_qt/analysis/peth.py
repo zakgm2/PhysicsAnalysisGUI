@@ -12,23 +12,25 @@ import PhysicsLibrary as pl
 
 from ..fonts import fig_font_sizes
 from ..toasts import show_error, show_window_toast
-from .dispatch import export_figure_to_file
+from .dispatch import export_figure_to_file, get_window
 
 
 def launch_zscore_peth(ctx, center_t):
     if ctx.cache is None or ctx.cache.get('source') != 'TDT':
         show_error(ctx, "PETH is only available for TDT data.")
         return
+    pre, post = get_window(ctx)
     data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
     clean_signal = pl.smooth_signal(data_source, ctx.cache['fs'])
-    slice_x, z_seg = pl.get_zscore_slice(ctx.cache['x'], clean_signal, center_t, window=30)
+    slice_x, z_seg = pl.get_zscore_slice(ctx.cache['x'], clean_signal, center_t, pre=pre, post=post)
     if z_seg is None:
         return
     z_binned = pl.bin_for_heatmap(z_seg)
     mode_str = "Corrected" if ctx.show_corrected else "Raw"
 
     dlg = QDialog(ctx.win)
-    dlg.setWindowTitle(f"PETH Analysis ({mode_str}) - {center_t:.2f}s")
+    dlg.setWindowTitle(f"PETH Analysis ({mode_str}) - {center_t:.2f}s  "
+                        f"(-{pre:.0f}s/+{post:.0f}s)")
     dlg.resize(700, 650)
     layout = QVBoxLayout(dlg)
 
@@ -36,14 +38,14 @@ def launch_zscore_peth(ctx, center_t):
     ax_heat, ax_line = fig_peth.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [1, 1]})
 
     ax_heat.imshow(z_binned.reshape(1, -1), aspect='auto', cmap='YlGnBu_r',
-                   extent=[-30, 30, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
+                   extent=[-pre, post, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
     ax_heat.set_yticks([])
     tfs_p, lfs_p, _ = fig_font_sizes(fig_peth)
     ax_heat.set_ylabel("Intensity", fontweight='bold', fontsize=lfs_p)
 
     ax_line.plot(slice_x - center_t, z_seg, color='black', linewidth=1.5)
     ax_line.axvline(0, color='red', linestyle='--', alpha=0.8)
-    ax_line.set_xlim([-15, 15])
+    ax_line.set_xlim([-pre, post])
     ax_line.set_ylim([-5, 5])
     ax_line.set_ylabel(f"Z-Score ({mode_str})", fontweight='bold', fontsize=lfs_p)
     ax_line.set_xlabel("Time from Center (s)", fontweight='bold', fontsize=lfs_p)
