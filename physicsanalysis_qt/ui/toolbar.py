@@ -22,6 +22,7 @@ from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
 from ..analysis.window_settings import init_window_settings, open_window_dialog, _window_button_text
+from ..analysis.intervals import launch_intervals
 
 
 def _toggle_grid(ctx, state):
@@ -95,6 +96,10 @@ def build_toolbar(ctx):
     btn_save_markers = QPushButton("Save Markers")
     btn_save_markers.clicked.connect(lambda: save_markers(ctx))
     layout.addWidget(btn_save_markers)
+
+    btn_intervals = QPushButton("Measure Intervals")
+    btn_intervals.clicked.connect(lambda: launch_intervals(ctx))
+    layout.addWidget(btn_intervals)
 
     layout.addWidget(QLabel("|"))
 

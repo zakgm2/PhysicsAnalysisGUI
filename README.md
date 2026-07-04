@@ -22,7 +22,10 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 - **FFT viewer** — frequency analysis window with automatic peak annotation
 - **PETH / Z-score** — peri-event time histogram for TDT data
 - **PT2 image viewer** — colormap selector, live title editing, PNG/PDF/SVG export
-- **Markers** — a fresh load starts with no markers on screen; use **Add Marker** to bulk-add auto-detected event markers by store (multi-select, add/remove in one action), or configure a custom name/colour/font size once and stamp repeated markers Snipping-Tool style (click, click, click, then stop); a separate multi-select **Remove Markers** list handles batch cleanup; right-click a marker to rename/delete it individually; markers auto-save as a `.markers.json` sidecar
+- **Markers** — a fresh load starts with no markers on screen; use **Add Marker** to bulk-add auto-detected event markers by store (multi-select, add/remove in one action, High/Low phase checkboxes), or configure a custom name/colour/font size once and stamp repeated markers Snipping-Tool style (click, click, click, then stop); a separate multi-select **Remove Markers** list handles batch cleanup; right-click a marker to rename/delete it (or delete every marker sharing that name) individually; markers auto-save as a `.markers.json` sidecar
+- **High/low phase** — auto-detected markers show both onset (high, superscript ¹) and offset (low, superscript ⁰) by default High-only; useful for anything where on-duration matters (a pump, a light), not just the press
+- **Rename stores** — right-click a marker → Rename → "Rename all" applies to every marker from that store at once (or just the one instance); the Add Marker dialog's store list supports the same inline (right-click a store, type, Enter); **Reset Name** reverts back to the raw store id
+- **Measure Intervals** — a table of every marker currently on the plot, sorted by time, with time-since-previous-in-store (on-duration for high/low pairs) and time-since-previous-any-marker columns; exportable as CSV
 - **Analysis window** — a single **Window** button opens a dialog for the pre/post seconds around an FFT/PETH/Curve Fit click: symmetric (one total size, split evenly) or asymmetric (independent before/after, e.g. 10s before, 20s after)
 - **Edit Attributes** — customise plot title, axis labels, font sizes, and legend entries; changes persist across zoom/pan/hover
 - **Golden-ratio font scaling** — all figure text scales proportionally to figure/widget size and stays live during window resize, on both plot engines
@@ -82,6 +85,9 @@ python run_qt.py
 | Add auto-detected markers | **Add Marker** → *Add / Remove Auto-Detected Markers* → select store(s) → Add Selected |
 | Remove markers | **Add Marker** → *Remove Markers* → select marker(s) → Remove Selected |
 | Edit / delete a single marker | Right-click near it |
+| Rename / reset / delete all of one name | Right-click near it → Rename (with "all" toggle) / Reset Name / Delete all |
+| Rename a store inline | Add Marker → right-click a store in the list → type → Enter |
+| Measure time between events | **Measure Intervals** button |
 | Set analysis window | **Window** button → symmetric size or independent before/after |
 | Fit curve | Select **Curve Fit** mode, click two points |
 | Run FFT / PETH | Select mode from dropdown, double-click the plot |
@@ -94,6 +100,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.3.0 | High/low phase markers, store renaming, Measure Intervals, working Reload, inline-rename Qt bug fixes |
 | 2.2.0 | Redesigned opt-in marker workflow, asymmetric analysis window, live-resize fonts/margins, tkinter version removed |
 | 2.1.0 | PyQtGraph (GPU) plot engine option, Options dialog, background loading |
 | 2.0.0 | PyQt6 GUI port added alongside the tkinter version |

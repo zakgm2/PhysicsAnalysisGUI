@@ -2,6 +2,30 @@
 
 ---
 
+## v2.3.0
+**New: high/low phase for auto-detected markers**
+- Every TDT epoc is a state that goes high (onset — a press, a light/pump turning on) and later low (offset — the release, turning off). `get_event_markers()` (PhysicsLibrary 1.4.0) now surfaces both instead of only onset.
+- The Add Marker dialog's auto-detected section has **High**/**Low** checkboxes (High on by default) controlling which edges get bulk-added — most stores (lever presses, etc.) only need the press; a pump or light also benefits from the release/off edge for computing on-duration.
+- Every phase-tagged marker on the plot now shows a superscript **¹** (high) or **⁰** (low) next to its label.
+
+**New: rename auto-detected store names**
+- Right-click a marker → **Rename** now offers "Rename all '\<store\>' markers" (checked by default) — applies to every marker from that store, past and future, instead of just the one instance. The store's raw id (e.g. `PP1_`) stays the internal grouping key everywhere; only the display changes.
+- The Add Marker dialog's store list supports the same thing inline: right-click a store to turn it into an editable text box, Enter to save — no separate dialog needed. Left-click still multi-selects normally.
+- **Reset Name** — in the Edit Marker dialog (only shown once a store has a custom name) and as a **Reset Selected Names** button in the Add Marker dialog's store list — reverts back to the raw store id.
+- New **"Delete all '\<name\>' markers"** action in the right-click menu, next to the existing single Delete — removes every marker sharing that name (both phases together for a renamed/auto-detected store, since they're "the same name" once renamed, just a different superscript).
+- Note markers (free-text annotations like 'Clap') and manually-placed markers are never affected by store renames — their label was never derived from a store name to begin with.
+
+**New: Measure Intervals**
+- New **Measure Intervals** toolbar button: a table of every marker currently on the plot (any source — TDT, Oxysoft, or manually placed), sorted by time, with two interval columns — time since the previous event in the same store (which is exactly the on-duration for a store with alternating high/low phases) and time since the previous marker of any kind (useful when several event types are interleaved). Exportable as CSV.
+
+**New: single Reload actually reloads**
+- **Reload** previously just re-opened the same file picker as Open. It now re-reads the currently loaded folder/file from disk in place: TDT/Oxysoft skip the dialog entirely, Generic (Excel/CSV/TSV) re-parses the same file and reopens the table/column picker (skipping only the file-choice step). Falls back to Open if nothing's loaded yet.
+
+**Fixes**
+- Fixed several real Qt bugs found while building the inline store-rename box: the built-in item-editing delegate (`editItem()`) painted the old text underneath/offset from the new editor rather than replacing it — replaced with a manually-managed `QLineEdit` overlay; committing on Enter was falling through to the dialog's default button ("Start Placing"), dropping the user straight into marker-placement mode, because the editor was torn down synchronously while still inside its own Return-keypress dispatch; clicking a dialog button (e.g. "Add Selected") while a rename was still uncommitted needed two clicks to register, because auto-committing on focus-loss destroyed the editor mid-dispatch of its own focus-out event, corrupting that same click's delivery to the button. Renaming now only auto-commits from inside the editor on Enter/Escape; any other dialog action explicitly flushes a pending rename first (silently, folded into that action's own single redraw) before proceeding — so renaming and then immediately clicking Add/Remove/Start Placing now takes exactly one click.
+
+---
+
 ## v2.2.0
 **New: redesigned marker workflow**
 - Fresh loads (TDT and Oxysoft) no longer auto-populate the plot with every detected event marker — a busy TDT recording can easily have a dozen+ epoc stores (I/O strobes, Tick, Epoch Event Storage, …) that used to overlap into an unreadable mess. Auto-detected markers are now kept separately (`detected_markers`) and only added when you ask for them.

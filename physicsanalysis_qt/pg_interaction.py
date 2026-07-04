@@ -10,9 +10,9 @@ own plotting.py / interaction.py split.
 
 import numpy as np
 from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QDialog, QMenu
+from PyQt6.QtWidgets import QMenu
 
-from .markers import MarkerDialog, place_marker, find_nearest_marker
+from .markers import place_marker, find_nearest_marker, open_edit_marker_dialog
 from .toasts import show_error, show_window_toast
 
 
@@ -113,24 +113,29 @@ def on_pg_mouse_clicked(ctx, ev):
 
 def _right_click_marker_menu(ctx, xdata, global_pos):
     from .pg_engine import pg_simple_plot  # local import: avoid module cycle at import time
+    from .marker_labels import marker_display_label
+    from .markers import delete_all_same_name
+    from .toasts import show_success
 
     idx = find_nearest_marker(ctx, xdata)
     if idx is None:
         return
     marker = ctx.cache['markers'][idx]
+    name = marker_display_label(ctx, marker)
 
     menu = QMenu(ctx.win)
-    act_rename = menu.addAction(f"Rename '{marker['label']}'")
-    act_delete = menu.addAction(f"Delete '{marker['label']}'")
+    act_rename = menu.addAction(f"Rename '{name}'")
+    act_delete = menu.addAction(f"Delete '{name}'")
+    act_delete_all = menu.addAction(f"Delete all '{name}' markers")
     chosen = menu.exec(QPoint(int(global_pos.x()), int(global_pos.y())))
 
     if chosen == act_rename:
-        dlg = MarkerDialog(ctx.win, "Edit Marker", marker['label'],
-                            marker.get('color', 'green'), marker.get('fontsize', 8))
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            label, color, fontsize = dlg.values()
-            marker['label'], marker['color'], marker['fontsize'] = label, color, fontsize
+        if open_edit_marker_dialog(ctx, marker):
             pg_simple_plot(ctx)
     elif chosen == act_delete:
         ctx.cache['markers'].pop(idx)
         pg_simple_plot(ctx)
+    elif chosen == act_delete_all:
+        removed = delete_all_same_name(ctx, marker)
+        pg_simple_plot(ctx)
+        show_success(ctx, f"Deleted {removed} '{name}' marker(s)")

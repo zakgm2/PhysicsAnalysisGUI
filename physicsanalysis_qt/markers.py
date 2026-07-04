@@ -8,21 +8,31 @@ right-click rename/delete context menu.
 import numpy as np
 from PyQt6.QtWidgets import (
     QDialog, QGridLayout, QVBoxLayout, QLabel, QLineEdit, QWidget, QHBoxLayout,
-    QRadioButton, QButtonGroup, QPushButton, QMenu, QGroupBox,
+    QRadioButton, QButtonGroup, QPushButton, QMenu, QGroupBox, QCheckBox,
     QListWidget, QListWidgetItem, QAbstractItemView,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 from .context import _MARKER_COLORS
+from .marker_labels import store_display_name
 from .toasts import show_error, show_success, show_window_toast
 
 
 class MarkerDialog(QDialog):
-    """Add-or-edit marker dialog: name, colour radio group, font size."""
+    """Add-or-edit marker dialog: name, colour radio group, font size.
 
-    def __init__(self, parent, title, initial_label="Marker",
-                 initial_color="green", initial_fontsize=8):
-        super().__init__(parent)
+    When editing a marker that belongs to a store (pass store_id), an
+    extra "Rename all '<store>' markers" checkbox appears — checked
+    (default), the new name is remembered as that store's display name
+    and applies to every marker from that store, past and future;
+    unchecked, only this one marker instance is renamed."""
+
+    def __init__(self, ctx, title, initial_label="Marker",
+                 initial_color="green", initial_fontsize=8, store_id=None):
+        super().__init__(ctx.win)
+        self.ctx = ctx
+        self.store_id = store_id
+        self.reset_requested = False
         self.setWindowTitle(title)
         self.setModal(True)
         layout = QGridLayout(self)
@@ -51,12 +61,33 @@ class MarkerDialog(QDialog):
         self.e_fontsize.setFixedWidth(50)
         layout.addWidget(self.e_fontsize, 2, 1)
 
+        next_row = 3
+        self.chk_apply_all = None
+        if store_id is not None:
+            self.chk_apply_all = QCheckBox(f"Rename all '{store_display_name(ctx, store_id)}' markers")
+            self.chk_apply_all.setChecked(True)
+            layout.addWidget(self.chk_apply_all, next_row, 0, 1, 2)
+            next_row += 1
+
+        btn_row = QHBoxLayout()
+        if store_id is not None and store_id in ctx.store_labels:
+            btn_reset = QPushButton("Reset Name")
+            btn_reset.clicked.connect(self._reset)
+            btn_row.addWidget(btn_reset)
         btn = QPushButton("OK")
         btn.setDefault(True)
         btn.clicked.connect(self.accept)
-        layout.addWidget(btn, 3, 0, 1, 2)
+        btn_row.addWidget(btn)
+        layout.addLayout(btn_row, next_row, 0, 1, 2)
 
         self.e_name.setFocus()
+
+    def _reset(self):
+        """Clears this store's rename, reverting every marker from it back
+        to the raw store id — handled by the caller (open_edit_marker_dialog)
+        once this dialog closes, same as a normal rename/apply_to_all edit."""
+        self.reset_requested = True
+        self.accept()
 
     def values(self):
         label = self.e_name.text().strip() or "Marker"
@@ -67,6 +98,140 @@ class MarkerDialog(QDialog):
         except ValueError:
             fontsize = 8
         return label, color, fontsize
+
+    def apply_to_all(self):
+        return self.chk_apply_all is not None and self.chk_apply_all.isChecked()
+
+
+class _InlineRenameEdit(QLineEdit):
+    """A QLineEdit that emits `escaped` on Escape instead of Qt's default
+    (no-op) handling, so the caller can cancel the rename cleanly."""
+    escaped = pyqtSignal()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape:
+            self.escaped.emit()
+            return
+        super().keyPressEvent(event)
+
+
+class _RenamableStoreList(QListWidget):
+    """A QListWidget where left-click behaves normally (select/multi-select)
+    but right-click on an item starts inline text editing — Enter or
+    losing focus commits, Escape cancels.
+
+    Deliberately NOT using Qt's built-in item-editing (setFlags(...
+    ItemIsEditable) + editItem()): calling that programmatically from a
+    mouse handler leaves the item's own delegate-painted text visible
+    underneath/offset from the editor, a real rendering glitch rather than
+    anything specific to how it was invoked here. Managing a plain
+    QLineEdit via setIndexWidget() instead sidesteps it entirely — the
+    widget just replaces that cell outright."""
+    store_renamed = pyqtSignal(QListWidgetItem, str)  # (item, new_text) once committed
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active = None  # (item, commit_now) while a rename edit is open
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            item = self.itemAt(event.pos())
+            if item is not None:
+                # Once an editor is already showing for this item, this
+                # click lands on the QLineEdit child widget itself (Qt
+                # dispatches to the topmost child, not the list view) —
+                # let it fall through to the line edit's own handling
+                # rather than starting a second overlapping editor.
+                if self.indexWidget(self.indexFromItem(item)) is None:
+                    self._begin_rename(item)
+                    return
+        super().mousePressEvent(event)
+
+    def take_pending_rename(self):
+        """If a rename edit box is currently open, close it immediately and
+        return (item, new_text) — WITHOUT emitting store_renamed, so the
+        caller can fold it into one larger action's own single
+        redraw/toast instead of this causing a separate one first. Returns
+        None if there was nothing pending (or the text was empty/unchanged).
+
+        Callers must invoke this before any action that might close the
+        dialog (Add/Remove/Start Placing) regardless of whether they use
+        the return value — letting the dialog close while the edit box is
+        still open crashes: Qt destroys the still-live QLineEdit
+        mid-teardown, and the deferred widget-removal a normal
+        Enter/Escape commit schedules (see _begin_rename) then runs
+        against an already-deleted list widget on the next event loop
+        tick."""
+        if self._active is None:
+            return None
+        item, editor, state, cleanup = self._active
+        if state["done"]:
+            return None
+        new_text = editor.text().strip()
+        cleanup(deferred=False)
+        if new_text and new_text != item.text():
+            return item, new_text
+        return None
+
+    def _begin_rename(self, item):
+        index = self.indexFromItem(item)
+        editor = _InlineRenameEdit(item.text(), self.viewport())
+        # A right-click landing on the editor once it exists should do
+        # nothing special (see mousePressEvent above) rather than pop the
+        # QLineEdit's native Cut/Copy/Paste menu.
+        editor.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+
+        state = {"done": False}
+
+        def cleanup(deferred):
+            if state["done"]:
+                return
+            state["done"] = True
+            self._active = None
+            if deferred:
+                # Removing the index widget synchronously while we're
+                # still inside its own Return-keypress handling makes Qt
+                # lose track of that key event once the widget's gone
+                # mid-dispatch — it then falls through to the dialog's
+                # default button ("Start Placing"), dropping the user
+                # straight into marker-placement mode. A one-tick delay
+                # lets this event finish first.
+                QTimer.singleShot(0, lambda: self.setIndexWidget(index, None))
+            else:
+                self.setIndexWidget(index, None)
+
+        def commit_from_enter():
+            new_text = editor.text().strip()
+            already_done = state["done"]
+            cleanup(deferred=True)
+            if not already_done and new_text and new_text != item.text():
+                self.store_renamed.emit(item, new_text)
+
+        # Deliberately NOT wired to editingFinished/focus-loss: that fires
+        # the instant another widget (e.g. the 'Add Selected' button)
+        # takes focus, so destroying the editor right then — even
+        # immediately, not deferred — corrupts THAT SAME click's delivery
+        # to whatever's taking focus, since we'd be tearing the editor
+        # down mid-dispatch of its own focus-out event. It silently ate
+        # the click, requiring a second one to actually register.
+        # Only Enter/Escape commit from inside the editor itself now;
+        # anything else (clicking a button, another item, etc.) is
+        # handled cleanly afterward by take_pending_rename(), called from
+        # each button handler's own already-finished click event instead.
+        editor.returnPressed.connect(commit_from_enter)
+        editor.escaped.connect(lambda: cleanup(deferred=True))
+        self._active = (item, editor, state, cleanup)
+        self.setIndexWidget(index, editor)
+        # setIndexWidget() runs its own layout pass that overrides both
+        # geometry AND widget attributes set beforehand (autoFillBackground
+        # included) — without redoing them after, the editor lands offset
+        # from the item's rect with a see-through background, letting the
+        # item's own painted text show behind it.
+        editor.setGeometry(self.visualRect(index))
+        editor.setAutoFillBackground(True)
+        editor.setStyleSheet("background-color: white; color: black;")
+        editor.selectAll()
+        editor.setFocus(Qt.FocusReason.MouseFocusReason)
 
 
 class AddMarkerDialog(QDialog):
@@ -90,12 +255,30 @@ class AddMarkerDialog(QDialog):
         l1 = QVBoxLayout(box1)
         if stores:
             l1.addWidget(QLabel("Select one or more stores (ctrl/shift-click to "
-                                 "multi-select) and Add Selected or Remove Selected."))
-            self.store_list = QListWidget()
+                                 "multi-select) and Add Selected or Remove Selected. "
+                                 "Right-click a store to rename it."))
+            self.store_list = _RenamableStoreList()
             self.store_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-            self.store_list.addItems(stores)
+            for store_id in stores:
+                item = QListWidgetItem(store_display_name(ctx, store_id))
+                item.setData(Qt.ItemDataRole.UserRole, store_id)
+                self.store_list.addItem(item)
             self.store_list.setFixedHeight(min(120, 22 * len(stores) + 4))
+            self.store_list.store_renamed.connect(self._on_store_renamed)
             l1.addWidget(self.store_list)
+
+            # Every epoc is a state that goes high (onset — e.g. a lever
+            # press) and later low (offset — e.g. the release). For
+            # something like a lever press only the press usually matters;
+            # for a pump or light, how long it stayed on does too. Off by
+            # default since most stores behave like the former.
+            self.chk_high = QCheckBox("High (onset / press / on)")
+            self.chk_high.setChecked(True)
+            l1.addWidget(self.chk_high)
+            self.chk_low = QCheckBox("Low (offset / release / off)")
+            self.chk_low.setChecked(False)
+            l1.addWidget(self.chk_low)
+
             store_btn_row = QHBoxLayout()
             btn_add_selected = QPushButton("Add Selected")
             btn_add_selected.clicked.connect(self._add_selected_stores)
@@ -103,6 +286,9 @@ class AddMarkerDialog(QDialog):
             btn_remove_selected_stores = QPushButton("Remove Selected")
             btn_remove_selected_stores.clicked.connect(self._remove_selected_stores)
             store_btn_row.addWidget(btn_remove_selected_stores)
+            btn_reset_selected_names = QPushButton("Reset Selected Names")
+            btn_reset_selected_names.clicked.connect(self._reset_selected_names)
+            store_btn_row.addWidget(btn_reset_selected_names)
             l1.addLayout(store_btn_row)
         else:
             self.store_list = None
@@ -121,7 +307,9 @@ class AddMarkerDialog(QDialog):
             for i, m in enumerate(current):
                 text = f"{m['label']}  @ {m['time']:.2f}s"
                 if m.get('store'):
-                    text += f"   [{m['store']}]"
+                    text += f"   [{store_display_name(ctx, m['store'])}]"
+                if m.get('phase'):
+                    text += f"  ({m['phase']})"
                 item = QListWidgetItem(text)
                 item.setData(Qt.ItemDataRole.UserRole, i)
                 self.marker_list.addItem(item)
@@ -181,13 +369,102 @@ class AddMarkerDialog(QDialog):
 
         self.e_name.setFocus()
 
+    def _apply_store_rename(self, item, new_name):
+        """Rename every marker of this store — same as the right-click-on-
+        plot 'Rename all' path. No redraw/toast here: callers that fold
+        this into a bigger action (Add/Remove/Start Placing) want exactly
+        one redraw/toast for the whole action, not a separate one just for
+        the rename half of it."""
+        store_id = item.data(Qt.ItemDataRole.UserRole)
+        self.ctx.store_labels[store_id] = new_name
+        item.setText(new_name)
+
+    def _flush_pending_rename(self):
+        """Commit any open rename edit box before an action that might
+        close the dialog (see _RenamableStoreList.take_pending_rename for
+        why this must always be called first). Applied silently — the
+        caller's own redraw/toast at the end of its action covers it, so
+        renaming right before clicking Add/Remove/Start Placing doesn't
+        also flash a separate 'Renamed' redraw first.
+
+        Returns True if a rename was actually applied — callers whose main
+        action bails out early (e.g. nothing selected) must still redraw
+        in that case themselves, or the rename would be silently applied
+        with nothing on screen ever reflecting it until some later action
+        happens to redraw."""
+        if self.store_list is None:
+            return False
+        pending = self.store_list.take_pending_rename()
+        if pending is not None:
+            self._apply_store_rename(*pending)
+            return True
+        return False
+
+    def _on_store_renamed(self, item, new_name):
+        """Connected to store_renamed for a standalone rename (Enter/focus-
+        loss with nothing else happening) — this is the only path that
+        redraws/toasts for the rename by itself."""
+        self._apply_store_rename(item, new_name)
+        if self.ctx.cache is not None:
+            from .plotting import simple_plot
+            simple_plot(self.ctx)
+        show_success(self.ctx, f"Renamed to '{new_name}'")
+
+    def _reset_selected_names(self):
+        """Clears any custom rename for the selected stores, reverting
+        their display back to the raw store id (e.g. 'PP1_')."""
+        renamed = self._flush_pending_rename()
+        selected_items = self.store_list.selectedItems()
+        if not selected_items:
+            show_error(self.ctx, "Select at least one store first.")
+            if renamed and self.ctx.cache is not None:
+                from .plotting import simple_plot
+                simple_plot(self.ctx)
+            return
+        reset_count = 0
+        for item in selected_items:
+            store_id = item.data(Qt.ItemDataRole.UserRole)
+            if self.ctx.store_labels.pop(store_id, None) is not None:
+                reset_count += 1
+            item.setText(store_id)
+        if self.ctx.cache is not None:
+            from .plotting import simple_plot
+            simple_plot(self.ctx)
+        show_success(self.ctx, f"Reset {reset_count} store name(s)")
+
+    def _phase_allowed(self, marker):
+        """Note-style markers (no 'phase' key) are instantaneous — always
+        included. Everything else is a high (onset) or low (offset) edge
+        of a state, filtered by the two checkboxes above."""
+        phase = marker.get('phase')
+        if phase is None:
+            return True
+        if phase == 'high':
+            return self.chk_high.isChecked()
+        if phase == 'low':
+            return self.chk_low.isChecked()
+        return True
+
     def _add_selected_stores(self):
-        selected_stores = {item.text() for item in self.store_list.selectedItems()}
+        renamed = self._flush_pending_rename()
+
+        def _redraw_if_renamed():
+            if renamed and self.ctx.cache is not None:
+                from .plotting import simple_plot
+                simple_plot(self.ctx)
+
+        selected_stores = {item.data(Qt.ItemDataRole.UserRole) for item in self.store_list.selectedItems()}
         if not selected_stores:
             show_error(self.ctx, "Select at least one store first.")
+            _redraw_if_renamed()
+            return
+        if not self.chk_high.isChecked() and not self.chk_low.isChecked():
+            show_error(self.ctx, "Select High and/or Low first.")
+            _redraw_if_renamed()
             return
         detected = self.ctx.cache.get('detected_markers', [])
-        to_add = [dict(m) for m in detected if m.get('store') in selected_stores]
+        to_add = [dict(m) for m in detected
+                  if m.get('store') in selected_stores and self._phase_allowed(m)]
         self.ctx.cache['markers'].extend(to_add)
         from .plotting import simple_plot
         simple_plot(self.ctx)
@@ -196,9 +473,13 @@ class AddMarkerDialog(QDialog):
         self.accept()
 
     def _remove_selected_stores(self):
-        selected_stores = {item.text() for item in self.store_list.selectedItems()}
+        renamed = self._flush_pending_rename()
+        selected_stores = {item.data(Qt.ItemDataRole.UserRole) for item in self.store_list.selectedItems()}
         if not selected_stores:
             show_error(self.ctx, "Select at least one store first.")
+            if renamed and self.ctx.cache is not None:
+                from .plotting import simple_plot
+                simple_plot(self.ctx)
             return
         before = len(self.ctx.cache['markers'])
         self.ctx.cache['markers'] = [m for m in self.ctx.cache['markers']
@@ -211,9 +492,13 @@ class AddMarkerDialog(QDialog):
         self.accept()
 
     def _remove_selected_markers(self):
+        renamed = self._flush_pending_rename()
         selected_items = self.marker_list.selectedItems()
         if not selected_items:
             show_error(self.ctx, "Select at least one marker first.")
+            if renamed and self.ctx.cache is not None:
+                from .plotting import simple_plot
+                simple_plot(self.ctx)
             return
         indices = sorted((item.data(Qt.ItemDataRole.UserRole) for item in selected_items),
                           reverse=True)
@@ -225,6 +510,14 @@ class AddMarkerDialog(QDialog):
         self.accept()
 
     def _start(self):
+        # Unlike the other actions here, Start Placing never redraws on
+        # its own afterward (placing markers does that per-click, later) —
+        # so a rename right before clicking it needs its own redraw now,
+        # or it wouldn't show up until the first marker gets placed.
+        renamed = self._flush_pending_rename()
+        if renamed and self.ctx.cache is not None:
+            from .plotting import simple_plot
+            simple_plot(self.ctx)
         label = self.e_name.text().strip() or "Marker"
         checked = self.color_group.checkedButton()
         color = checked.text() if checked else "green"
@@ -280,7 +573,67 @@ def find_nearest_marker(ctx, t, tol_s=2.0):
     return idx if dists[idx] <= tol_s else None
 
 
+def apply_marker_edit(ctx, marker, label, color, fontsize, apply_to_all):
+    """Rename all markers of this store (via ctx.store_labels, which every
+    render path/dialog looks up display names through — see
+    marker_labels.py) vs. just this one marker instance. Colour/font size
+    always apply to this instance only."""
+    if apply_to_all and marker.get('store'):
+        ctx.store_labels[marker['store']] = label
+    else:
+        marker['label'] = label
+    marker['color'] = color
+    marker['fontsize'] = fontsize
+
+
+def open_edit_marker_dialog(ctx, marker):
+    """Shared by both plot engines' right-click 'Rename' action.
+
+    The "rename all" option (and the store-name prefill) only makes sense
+    for markers whose label IS the store name by convention — that's
+    markers with a 'phase' key (see marker_labels.marker_display_label for
+    why). Anything else — Note markers (label is the actual note text,
+    e.g. 'Clap', even though they share store == 'Note'), or manually
+    placed markers — is renamed as a plain one-off, same as before this
+    feature existed."""
+    store_id = marker.get('store') if marker.get('phase') is not None else None
+    current_name = store_display_name(ctx, store_id) if store_id else marker['label']
+    dlg = MarkerDialog(ctx, "Edit Marker", current_name,
+                        marker.get('color', 'green'), marker.get('fontsize', 8),
+                        store_id=store_id)
+    if dlg.exec() == QDialog.DialogCode.Accepted:
+        if dlg.reset_requested:
+            ctx.store_labels.pop(store_id, None)
+            return True
+        label, color, fontsize = dlg.values()
+        apply_marker_edit(ctx, marker, label, color, fontsize, dlg.apply_to_all())
+        return True
+    return False
+
+
+def _same_name_key(m):
+    """What counts as 'the same name' for bulk delete: for a phase-tagged
+    marker (onset/offset), that's its store — high and low share one
+    display name (just a different superscript), and the store is also
+    what a rename actually renamed. Anything else (Note markers, manually
+    placed markers) is grouped by its own label instead, since those were
+    never tied to a store name in the first place."""
+    if m.get('phase') is not None:
+        return ('store', m['store'])
+    return ('label', m['label'])
+
+
+def delete_all_same_name(ctx, marker):
+    """Removes every marker matching marker's name (see _same_name_key)
+    from cache['markers']. Returns how many were removed."""
+    key = _same_name_key(marker)
+    before = len(ctx.cache['markers'])
+    ctx.cache['markers'] = [m for m in ctx.cache['markers'] if _same_name_key(m) != key]
+    return before - len(ctx.cache['markers'])
+
+
 def right_click_marker_menu(ctx, xdata, global_pos):
+    from .marker_labels import marker_display_label
     from .plotting import simple_plot
     if ctx.cache is None or xdata is None:
         return
@@ -288,19 +641,21 @@ def right_click_marker_menu(ctx, xdata, global_pos):
     if idx is None:
         return
     marker = ctx.cache['markers'][idx]
+    name = marker_display_label(ctx, marker)
 
     menu = QMenu(ctx.win)
-    act_rename = menu.addAction(f"Rename '{marker['label']}'")
-    act_delete = menu.addAction(f"Delete '{marker['label']}'")
+    act_rename = menu.addAction(f"Rename '{name}'")
+    act_delete = menu.addAction(f"Delete '{name}'")
+    act_delete_all = menu.addAction(f"Delete all '{name}' markers")
     chosen = menu.exec(global_pos)
 
     if chosen == act_rename:
-        dlg = MarkerDialog(ctx.win, "Edit Marker", marker['label'],
-                            marker.get('color', 'green'), marker.get('fontsize', 8))
-        if dlg.exec() == QDialog.DialogCode.Accepted:
-            label, color, fontsize = dlg.values()
-            marker['label'], marker['color'], marker['fontsize'] = label, color, fontsize
+        if open_edit_marker_dialog(ctx, marker):
             simple_plot(ctx)
     elif chosen == act_delete:
         ctx.cache['markers'].pop(idx)
         simple_plot(ctx)
+    elif chosen == act_delete_all:
+        removed = delete_all_same_name(ctx, marker)
+        simple_plot(ctx)
+        show_success(ctx, f"Deleted {removed} '{name}' marker(s)")
