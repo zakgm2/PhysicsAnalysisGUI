@@ -269,11 +269,12 @@ def pg_simple_plot(ctx):
         y_label, title = "Amplitude", f"{label_text} — {cache['store']}"
         x_label = "Time (s)"
 
+    from .marker_labels import marker_display_label
     for m in cache['markers']:
         line = pg.InfiniteLine(
             pos=m['time'], angle=90, movable=False,
             pen=pg.mkPen(color=m['color'], width=1, style=Qt.PenStyle.DashLine),
-            label=m['label'],
+            label=marker_display_label(ctx, m),
             labelOpts={'position': 0.95, 'color': m['color'], 'rotateAxis': (1, 0)},
         )
         plot_item.addItem(line)

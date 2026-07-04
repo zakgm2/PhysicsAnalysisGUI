@@ -69,13 +69,16 @@ def update_decimated_lines(ctx):
 
 
 def _update_plot_with_notes(ctx, markers):
+    from .marker_labels import marker_display_label
+
     trans = transforms.blended_transform_factory(ctx.ax.transData, ctx.ax.transAxes)
     unique_labels = set()
     for m in markers:
-        label_id = m['label'] if m['label'] not in unique_labels else "_nolegend_"
-        unique_labels.add(m['label'])
+        text = marker_display_label(ctx, m)
+        label_id = text if text not in unique_labels else "_nolegend_"
+        unique_labels.add(text)
         ctx.ax.axvline(x=m['time'], color=m['color'], linestyle='--', alpha=0.6, label=label_id)
-        ctx.ax.text(m['time'], 0.98, f" {m['label']}", transform=trans,
+        ctx.ax.text(m['time'], 0.98, f" {text}", transform=trans,
                      rotation=90, va='top', clip_on=True, fontsize=m.get('fontsize', 8),
                      color=m['color'], fontweight='bold',
                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))

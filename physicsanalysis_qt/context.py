@@ -78,6 +78,12 @@ class AppState:
         self.window_post = None
         self.window_symmetric = True
 
+        # Store id -> renamed display name (e.g. 'PP1_' -> 'Left Lever'),
+        # set via right-click Edit Marker's "rename all" toggle — see
+        # marker_labels.py. The store id itself never changes, only how
+        # it's displayed everywhere (plot, dialogs, Event Intervals table).
+        self.store_labels = {}
+
         # Data
         self.cache = None
         self.selected_path = None
