@@ -22,6 +22,7 @@ low pairs happen to alternate.
 
 import csv
 import datetime
+import os
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
@@ -106,8 +107,10 @@ class IntervalsDialog(QDialog):
     def _export_csv(self):
         ts = datetime.datetime.now().strftime("%H%M%S")
         store_name = self.ctx.cache.get('store', 'Data') if self.ctx.cache else 'Data'
+        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export Event Intervals", f"EventIntervals_{store_name}_{ts}.csv",
+            self, "Export Event Intervals",
+            os.path.join(start_dir, f"EventIntervals_{store_name}_{ts}.csv"),
             "CSV (*.csv);;Text (*.txt)"
         )
         if not path:

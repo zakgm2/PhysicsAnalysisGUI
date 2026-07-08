@@ -92,7 +92,7 @@ class CurveFitDialog(QDialog):
         self.result_lbl.setFont(QFont("Consolas", 9))
         self.result_lbl.setWordWrap(True)
         self.result_lbl.setFrameShape(QFrame.Shape.Panel)
-        self.result_lbl.setStyleSheet("background-color: white; padding: 8px;")
+        self.result_lbl.setStyleSheet("background-color: white; color: black; padding: 8px;")
         layout.addWidget(self.result_lbl)
 
         self.sub_fig = Figure(figsize=(6, 3.5), dpi=100)
@@ -218,8 +218,9 @@ class CurveFitDialog(QDialog):
             show_error(self.ctx, "Run the fit first.")
             return
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export fit parameters", f"CurveFit_{ts}.csv",
+            self, "Export fit parameters", os.path.join(start_dir, f"CurveFit_{ts}.csv"),
             "CSV (*.csv);;Text (*.txt)"
         )
         if not path:

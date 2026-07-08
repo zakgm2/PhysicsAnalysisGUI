@@ -2,6 +2,33 @@
 
 ---
 
+## v2.4.1
+**Fixed: Curve Fit results invisible under Windows dark mode**
+- The results box only set `background-color: white`, not the text color — on a system with Windows dark mode enabled, Qt6's automatic dark palette rendered the label text white as well, so fitted parameters were computed and displayed on the plot correctly but unreadable (white on white) above it. Text color is now explicitly pinned to black.
+
+---
+
+## v2.4.0
+**New: text field study analysis**
+- New **Text Field Study ▾** toolbar menu (its own dropdown, not mixed into the marker controls or the main Open menu — a study is a completely separate workflow from the main signal plot): **Open Study Folder**, **View Results**, **Statistical Validation**.
+- **Open Study Folder**: pick a folder of one-JSON-file-per-subject data (any study, not a fixed schema — see PhysicsLibrary 1.5.0's `run_field_study_pipeline`). Every file matching the folder's naming pattern is loaded into one DataFrame, one row per subject.
+- Field comparisons are set up inline, right after picking the folder: a dialog shows the actual field names found in that folder's own files (via `peek_fields`), and you just pick pairs of fields to compare directly (e.g. "does this answer track that one") — add as many comparisons as you want, plus an optional "how much did the response change between these two fields" measurement and a configurable low-word-count quality-flag threshold. No grouping concept to learn — pick two fields, name the comparison, done. Saved locally and pre-fills next time you open a folder.
+- **View Results** (reopens without rerunning): a table of the analysis columns — word counts, data-quality flags, delta magnitude, paired similarity, a permutation-test p-value/effect size per pair, and a word-count-confound check — plus full-DataFrame CSV export.
+- The actual field configuration for a given study (which fields, which pairs) is study-specific and lives in a local config file outside this repo (`~/.physicsanalysis/`), not in source — nothing about what any particular study measures ships with the app.
+- New `ctx.study_data`/`ctx.study_data_path`/`ctx.study_data_config` — kept separate from `ctx.cache`, whose x/y/markers shape every plotting/marker/analysis module elsewhere assumes; a DataFrame doesn't fit that.
+- New dependency: pandas.
+
+**New: statistical validation for text field studies**
+- **Statistical Validation** (in the same menu, and directly in the results dialog once a study has at least one comparison): re-runs the pipeline through PhysicsLibrary's `run_validation_pipeline` and shows one row per field pair — permutation-test p-value with Benjamini-Hochberg FDR correction across every pair, Cohen's d effect size, a word-count-controlled OLS regression coefficient/p-value per field, a bootstrap 95% confidence interval on the mean similarity, and leave-one-out sensitivity flags, plus a plain-language "Verdict" column (a quick-glance read, not a substitute for the actual numbers). Full CSV export.
+- Fixed the results table forcing every column to equal width regardless of content (`Stretch` resize mode) — with this many columns, long header names were getting squeezed into columns far too narrow to hold them, reading as overlapping/garbled text. Columns now size to their own content, with horizontal scrolling for the rest.
+- Fixed PhysicsLibrary's word-count confound check crashing outright (`pearsonr` needs at least 2 subjects) instead of returning `NaN` for a statistic that's genuinely undefined with too little data — same fix applied to Cohen's d, the word-count regression, and leave-one-out for the same reason.
+- Clarified the whole workflow: the menu is numbered ("1. Open Study Folder…", "2. Statistical Validation") with tooltips explaining what each step does and that results already open automatically after step 1; both dialogs now explain in plain language what the similarity score and the statistics actually mean, not just their column names.
+
+**Fixed: every Export/Save dialog opening to System32**
+- None of the app's Export/Save dialogs (View, plot images, CSVs across curve fit, FFT, event intervals, and both new text field study dialogs) passed a starting directory to `QFileDialog.getSaveFileName`, so it fell back to the process's working directory — which on Windows can resolve to `System32` depending on how the app was launched. Every one of them now opens to the last folder you browsed to (or Desktop by default), matching how the Open dialogs already behaved.
+
+---
+
 ## v2.3.0
 **New: high/low phase for auto-detected markers**
 - Every TDT epoc is a state that goes high (onset — a press, a light/pump turning on) and later low (offset — the release, turning off). `get_event_markers()` (PhysicsLibrary 1.4.0) now surfaces both instead of only onset.

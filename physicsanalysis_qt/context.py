@@ -92,6 +92,15 @@ class AppState:
         self.show_grid = True
         self.plot_attrs = default_plot_attrs()
 
+        # Text field study data (see loaders/text_field_study.py) — a
+        # pandas DataFrame, not the x/y/markers shape ctx.cache holds for
+        # every signal-plot source, so it gets its own attribute rather
+        # than overloading ctx.cache (which plotting/marker/analysis code
+        # throughout the app assumes has that shape).
+        self.study_data = None
+        self.study_data_path = None
+        self.study_data_config = None  # the field_study_config.py dict used for this load
+
         # (engine, id(cache)) the view was last reset-to-fit for. Redraws
         # triggered by things that aren't a fresh data load (grid toggle,
         # marker add/edit, attribute changes) compare against this so they

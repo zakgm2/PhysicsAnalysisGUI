@@ -6,6 +6,8 @@ _apply_plot_attrs() re-applies persisted label/font/legend customisations
 after any redraw, and export_canvas_action() saves the current view.
 """
 
+import os
+
 import numpy as np
 import matplotlib.transforms as transforms
 from PyQt6.QtWidgets import QFileDialog
@@ -273,8 +275,9 @@ def export_canvas_action(ctx):
         from .pg_engine import pg_export_view
         pg_export_view(ctx)
         return
+    start_dir = ctx.last_dir or ctx.settings["default_folder"]
     file_path, _ = QFileDialog.getSaveFileName(
-        ctx.win, "Export View", f"{ctx.cache['store']}_view.png",
+        ctx.win, "Export View", os.path.join(start_dir, f"{ctx.cache['store']}_view.png"),
         "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
     )
     if file_path:

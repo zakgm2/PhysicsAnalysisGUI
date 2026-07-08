@@ -21,6 +21,8 @@ the manual _min_max_decimate() from plotting.py — that logic is
 specific to matplotlib's Agg renderer, which has no equivalent built-in.
 """
 
+import os
+
 import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.exporters  # noqa: F401 — registers pg.exporters.ImageExporter
@@ -366,8 +368,9 @@ def pg_export_view(ctx):
     if ctx.cache is None:
         show_error(ctx, "No plot to export.")
         return
+    start_dir = ctx.last_dir or ctx.settings["default_folder"]
     file_path, _ = QFileDialog.getSaveFileName(
-        ctx.win, "Export View", f"{ctx.cache['store']}_view.png", "PNG (*.png)"
+        ctx.win, "Export View", os.path.join(start_dir, f"{ctx.cache['store']}_view.png"), "PNG (*.png)"
     )
     if file_path:
         exporter = pg.exporters.ImageExporter(ctx.pg_plot_item)

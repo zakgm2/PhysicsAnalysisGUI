@@ -14,6 +14,7 @@ from ..loaders.tdt import open_folder, reload_folder
 from ..loaders.oxysoft import open_file, reload_file
 from ..loaders.generic import launch_generic_file_loader, reload_generic
 from ..loaders.pt2 import launch_pt2_viewer
+from ..loaders.text_field_study import open_field_study_folder
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers
 from ..interaction import reset_zoom
@@ -23,6 +24,8 @@ from ..options import open_options_dialog
 from ..toasts import show_error
 from ..analysis.window_settings import init_window_settings, open_window_dialog, _window_button_text
 from ..analysis.intervals import launch_intervals
+from ..analysis.text_field_study import launch_field_study_results
+from ..analysis.field_study_validation import launch_field_study_validation
 
 
 def _toggle_grid(ctx, state):
@@ -68,6 +71,25 @@ def build_toolbar(ctx):
     btn_reload = QPushButton("Reload")
     btn_reload.clicked.connect(lambda: _reload_current(ctx))
     layout.addWidget(btn_reload)
+
+    layout.addWidget(QLabel("|"))
+
+    field_study_menu_btn = QPushButton("Text Field Study ▾")
+    field_study_menu = QMenu(field_study_menu_btn)
+    act_open_study = field_study_menu.addAction(
+        "1. Open Study Folder…", lambda: open_field_study_folder(ctx))
+    act_open_study.setToolTip("Pick a folder and choose which fields to compare — "
+                               "results open automatically when it's done.")
+    act_reopen_results = field_study_menu.addAction(
+        "Reopen Last Results", lambda: launch_field_study_results(ctx))
+    act_reopen_results.setToolTip("Results already opened automatically after step 1 — "
+                                   "use this only if you closed that window and want it back.")
+    act_validate = field_study_menu.addAction(
+        "2. Statistical Validation", lambda: launch_field_study_validation(ctx))
+    act_validate.setToolTip("Optional follow-up once you have results: is the similarity "
+                             "you're seeing likely real, and how confident should you be?")
+    field_study_menu_btn.setMenu(field_study_menu)
+    layout.addWidget(field_study_menu_btn)
 
     layout.addWidget(QLabel("|"))
 

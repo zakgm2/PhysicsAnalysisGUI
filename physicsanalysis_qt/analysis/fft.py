@@ -6,6 +6,7 @@ TDT/Generic sources.
 """
 
 import datetime
+import os
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
@@ -81,8 +82,10 @@ def launch_fft(ctx, center_t):
 
     def save_fft_action():
         ts = datetime.datetime.now().strftime("%H%M%S")
+        start_dir = ctx.last_dir or ctx.settings["default_folder"]
         fpath, _ = QFileDialog.getSaveFileName(
-            dlg, "Export FFT", f"FFT_{cache['store']}_{int(center_t)}s_{ts}.png",
+            dlg, "Export FFT",
+            os.path.join(start_dir, f"FFT_{cache['store']}_{int(center_t)}s_{ts}.png"),
             "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
         )
         if fpath:

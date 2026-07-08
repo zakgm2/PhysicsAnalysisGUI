@@ -8,6 +8,7 @@ alongside the toolbar button + dialog that configure it.
 """
 
 import datetime
+import os
 
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import QFileDialog
@@ -20,9 +21,10 @@ def export_figure_to_file(ctx, fig_obj, default_prefix, tracking_info=""):
     ts = datetime.datetime.now().strftime("%H%M%S")
     store_name = ctx.cache.get('store', 'Data') if ctx.cache else 'Data'
     suffix = f"_{tracking_info}" if tracking_info else ""
+    start_dir = ctx.last_dir or ctx.settings["default_folder"]
     fpath, _ = QFileDialog.getSaveFileName(
         ctx.win, f"Export {default_prefix} Visualization",
-        f"{default_prefix}_{store_name}{suffix}_{ts}.png",
+        os.path.join(start_dir, f"{default_prefix}_{store_name}{suffix}_{ts}.png"),
         "PNG Image (*.png);;PDF Document (*.pdf);;SVG Vector (*.svg)"
     )
     if fpath:

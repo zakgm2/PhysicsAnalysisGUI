@@ -2,6 +2,7 @@ numpy
 matplotlib
 scipy
 openpyxl
+pandas
 PyQt6
 pyqtgraph
 ZaksPhysicsLibrary

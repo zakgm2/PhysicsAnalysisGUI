@@ -69,8 +69,9 @@ class PT2ViewerDialog(QDialog):
     def _export(self):
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
         name = f"{os.path.splitext(os.path.basename(self.path))[0]}_{ts}.png"
+        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
         dst, _ = QFileDialog.getSaveFileName(
-            self, "Export Image", name, "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
+            self, "Export Image", os.path.join(start_dir, name), "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
         )
         if dst:
             self.fig2.savefig(dst, dpi=300, bbox_inches='tight')

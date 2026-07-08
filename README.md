@@ -2,7 +2,7 @@
 
 A PyQt6 desktop application for loading, visualising, and analysing physics lab data.
 
-Supports TDT fibre photometry recordings, Oxysoft / Artinis NIRS exports, generic tabular data (Excel, CSV, TSV, plain text), and Terranova Prospa EFNMR/MRI `.pt2` images.
+Supports TDT fibre photometry recordings, Oxysoft / Artinis NIRS exports, generic tabular data (Excel, CSV, TSV, plain text), Terranova Prospa EFNMR/MRI `.pt2` images, and grouped-text-field studies (one JSON file per subject, e.g. a survey with several free-text responses).
 
 Built on shared logic from [PhysicsLibrary](https://github.com/zakgm2/PhysicsLibrary) — this repo is the widget/window layer.
 
@@ -14,7 +14,7 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 
 ## Features
 
-- **Multi-format loading** — TDT tank folders, Oxysoft `.txt` exports, any Excel/CSV/TSV file, and Terranova `.pt2` EFNMR/MRI images, via a unified open menu
+- **Multi-format loading** — TDT tank folders, Oxysoft `.txt` exports, any Excel/CSV/TSV file, Terranova `.pt2` EFNMR/MRI images, and text field study folders, via a unified open menu
 - **Sub-table detection** — automatically finds multiple side-by-side tables in a single Excel sheet
 - **Interactive plot** — scroll to zoom, right-click drag to pan, rectangle select to zoom into a region, resize-safe
 - **Hover snap** — tracker dots snap to the nearest plotted line and display exact values
@@ -32,6 +32,8 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 - **Grid toggle** — show/hide background grid from the toolbar
 - **TSI Fit Factor** — extracted automatically from Oxysoft files and shown in the legend
 - **Options dialog** — default folder for Open dialogs, main-plot render decimation, background-thread loading, and CPU/GPU plot engine selection
+- **Text field study analysis** (**Text Field Study ▾** menu) — pick a folder of one-JSON-file-per-subject data (any schema), then pick pairs of fields to compare directly from the actual field names found in that folder — no fixed format, no grouping concept. Computes per-field word counts and low-word-count quality flags, embeds each compared field with a sentence-transformers model, an optional delta-vector magnitude between two fields, and a paired-similarity metric per pair with a permutation test (p-value, effect size) against a shuffled-pairing null plus a word-count confound check; results in a table with full-DataFrame CSV export. Field configuration is saved locally outside the repo, not in source.
+- **Statistical validation** (for text field studies) — permutation-test p-value with Benjamini-Hochberg FDR correction across pairs, Cohen's d effect size, a word-count-controlled OLS regression per field, a bootstrap 95% confidence interval on the mean similarity, and leave-one-out sensitivity flags; one row per pair, CSV export
 
 ---
 
@@ -71,6 +73,8 @@ python run_qt.py
 | **Open Excel/CSV/TSV** | Any tabular file — a dialog lets you pick X and Y columns |
 | **Open PT2 (EFNMR)** | A Terranova Prospa `.pt2` 2D image file |
 
+Text field studies live in their own **Text Field Study ▾** menu instead (not the Open menu above): **Open Study Folder** (pick a folder, then pick pairs of fields to compare right from that folder's own field names), **View Results**, **Statistical Validation**.
+
 ---
 
 ## Keyboard & Mouse
@@ -91,6 +95,7 @@ python run_qt.py
 | Set analysis window | **Window** button → symmetric size or independent before/after |
 | Fit curve | Select **Curve Fit** mode, click two points |
 | Run FFT / PETH | Select mode from dropdown, double-click the plot |
+| Text field study (open/view/validate) | **Text Field Study ▾** menu |
 
 ---
 
@@ -100,6 +105,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.4.0 | Text field study analysis + statistical validation (permutation test, FDR correction, Cohen's d, regression, bootstrap CI, leave-one-out) |
 | 2.3.0 | High/low phase markers, store renaming, Measure Intervals, working Reload, inline-rename Qt bug fixes |
 | 2.2.0 | Redesigned opt-in marker workflow, asymmetric analysis window, live-resize fonts/margins, tkinter version removed |
 | 2.1.0 | PyQtGraph (GPU) plot engine option, Options dialog, background loading |
