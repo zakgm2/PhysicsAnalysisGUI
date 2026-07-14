@@ -108,6 +108,17 @@ class AppState:
 
         # Data
         self.cache = None
+        # The unspliced full recording, saved off the first time Splice
+        # Recording is used, so Restore Full Recording can bring it back
+        # without re-loading from disk. None when no splice is active.
+        self.original_cache = None
+        # {"mode": ..., "start": ..., "end": ...} for the currently active
+        # splice, if any — what save_splice() (analysis/splice.py) writes
+        # to the JSON saves/ sidecar. None when no splice is active.
+        self._active_splice = None
+        # Set by analysis/splice.py's start_splice_flow() while the user
+        # is choosing what kind of splice, read by apply_splice_at_points().
+        self._pending_splice_mode = None
         self.selected_path = None
         self.last_dir = None  # last folder browsed in any Open dialog
         self.show_corrected = True
@@ -147,6 +158,11 @@ class AppState:
         self.is_dragging = False
         self.press_x = None
         self.press_y = None
+        # True while RectangleSelector's own drag-to-zoom is in progress
+        # (see interaction.py's on_press/on_motion/on_release) — suppresses
+        # the hover tracker's own blit for the duration so the two blit
+        # systems don't fight over the same canvas region.
+        self._rect_dragging = False
         self._last_pan_draw_time = 0.0
 
         # Decimation: (line, full_x, full_y) for every plotted trace, so its

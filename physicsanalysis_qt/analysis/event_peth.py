@@ -15,7 +15,7 @@ import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit,
 )
 
 import PhysicsLibrary as pl
@@ -51,70 +51,59 @@ def _group_markers_by_name(ctx):
     return groups
 
 
-class _EventPickerDialog(QDialog):
-    def __init__(self, parent, ctx, groups):
-        super().__init__(parent)
-        self.ctx = ctx
-        self.groups = groups
-        self.chosen_name = None
-        self.setWindowTitle("Event PETH — Choose Event")
-        layout = QVBoxLayout(self)
-
-        layout.addWidget(QLabel(
-            "Z-scores every occurrence of the chosen event against its own\n"
-            "pre-event baseline, stacks each occurrence as a row in a heatmap,\n"
-            "and plots the trial-averaged trace below it."
-        ))
-
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Event:"))
-        self.combo = QComboBox()
-        for name in sorted(groups.keys()):
-            self.combo.addItem(f"{name}  ({len(groups[name])} occurrences)", userData=name)
-        row.addWidget(self.combo, stretch=1)
-        layout.addLayout(row)
-
-        btn_row = QHBoxLayout()
-        btn_ok = QPushButton("Run")
-        btn_ok.setDefault(True)
-        btn_ok.clicked.connect(self._accept)
-        btn_cancel = QPushButton("Cancel")
-        btn_cancel.clicked.connect(self.reject)
-        btn_row.addWidget(btn_ok)
-        btn_row.addWidget(btn_cancel)
-        layout.addLayout(btn_row)
-
-    def _accept(self):
-        self.chosen_name = self.combo.currentData()
-        self.accept()
-
-
 class _EventPethResultsDialog(QDialog):
+    """Stays open across event switches — picking a different event from
+    the combo re-runs the computation in place instead of requiring you
+    to close this and reopen a separate picker dialog."""
+
     SORT_TRIAL_ORDER = "Trial order"
     SORT_PEAK_AMPLITUDE = "Peak amplitude"
 
-    def __init__(self, parent, ctx, event_name, peth_result, mode_str, pre, post):
+    def __init__(self, parent, ctx, groups, initial_event_name):
         super().__init__(parent)
         self.ctx = ctx
-        self.event_name = event_name
-        self.peth_result = peth_result
-        self.mode_str = mode_str
-        self.pre, self.post = pre, post
+        self.groups = groups
+        self.event_name = initial_event_name
+        self.peth_result = None
+        self._colorbar = None
 
-        self.setWindowTitle(f"Event PETH — {event_name} ({mode_str})")
-        self.resize(750, 700)
+        self.setWindowTitle("Event PETH")
+        self.resize(750, 720)
         layout = QVBoxLayout(self)
 
         top_row = QHBoxLayout()
-        n_trials = peth_result["trial_matrix"].shape[0]
-        top_row.addWidget(QLabel(f"{n_trials} trial(s)"))
+        top_row.addWidget(QLabel("Event:"))
+        self.combo_event = QComboBox()
+        for name in sorted(groups.keys()):
+            self.combo_event.addItem(f"{name}  ({len(groups[name])} occurrences)", userData=name)
+        self.combo_event.setCurrentIndex(self.combo_event.findData(initial_event_name))
+        self.combo_event.currentIndexChanged.connect(self._on_event_changed)
+        top_row.addWidget(self.combo_event, stretch=1)
+
+        self.lbl_trials = QLabel("")
+        top_row.addWidget(self.lbl_trials)
+
         top_row.addWidget(QLabel("Row order:"))
         self.sort_combo = QComboBox()
         self.sort_combo.addItems([self.SORT_TRIAL_ORDER, self.SORT_PEAK_AMPLITUDE])
         self.sort_combo.currentTextChanged.connect(self._redraw)
         top_row.addWidget(self.sort_combo)
-        top_row.addStretch(1)
         layout.addLayout(top_row)
+
+        window_row = QHBoxLayout()
+        window_row.addWidget(QLabel("Window — pre (s):"))
+        self.e_pre = QLineEdit(str(int(ctx.window_pre or get_window(ctx)[0])))
+        self.e_pre.setFixedWidth(50)
+        window_row.addWidget(self.e_pre)
+        window_row.addWidget(QLabel("post (s):"))
+        self.e_post = QLineEdit(str(int(ctx.window_post or get_window(ctx)[1])))
+        self.e_post.setFixedWidth(50)
+        window_row.addWidget(self.e_post)
+        btn_recalc = QPushButton("Recalculate")
+        btn_recalc.clicked.connect(lambda: self._run(self.event_name))
+        window_row.addWidget(btn_recalc)
+        window_row.addStretch(1)
+        layout.addLayout(window_row)
 
         self.fig = Figure(figsize=(8, 7), dpi=100)
         self.ax_heat, self.ax_line = self.fig.subplots(
@@ -123,13 +112,66 @@ class _EventPethResultsDialog(QDialog):
         self.canvas = FigureCanvasQTAgg(self.fig)
         layout.addWidget(self.canvas, stretch=1)
 
-        btn_export = QPushButton(f"Export {mode_str} Event PETH")
-        btn_export.clicked.connect(
-            lambda: export_figure_to_file(ctx, self.fig, f"EventPETH_{mode_str}", event_name)
+        self.btn_export = QPushButton("Export Event PETH")
+        self.btn_export.clicked.connect(
+            lambda: export_figure_to_file(ctx, self.fig, "EventPETH", self.event_name)
         )
-        layout.addWidget(btn_export)
+        layout.addWidget(self.btn_export)
 
-        self._redraw()
+        self._run(initial_event_name)
+
+    def _on_event_changed(self):
+        name = self.combo_event.currentData()
+        if name and name != self.event_name:
+            self._run(name)
+
+    def _read_window(self):
+        default_pre, default_post = get_window(self.ctx)
+        try:
+            pre = max(0.1, float(self.e_pre.text()))
+        except ValueError:
+            pre = default_pre
+        try:
+            post = max(0.1, float(self.e_post.text()))
+        except ValueError:
+            post = default_post
+        return pre, post
+
+    def _run(self, event_name):
+        ctx = self.ctx
+        self.event_name = event_name
+        self.combo_event.setEnabled(False)
+
+        event_times = self.groups[event_name]
+        self.pre, self.post = self._read_window()
+        self.mode_str = "Corrected" if ctx.show_corrected else "Raw"
+        data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
+        time_array = ctx.cache['x']
+        fs = ctx.cache['fs']
+        pre, post = self.pre, self.post
+
+        def _work():
+            clean_signal = pl.smooth_signal(data_source, fs)
+            return pl.compute_event_zscore_peth(time_array, clean_signal, event_times, pre, post)
+
+        def _on_success(result):
+            self.combo_event.setEnabled(True)
+            if result["trial_matrix"].shape[0] == 0:
+                show_error(ctx, f"No usable trials for '{event_name}' — all occurrences were "
+                                 f"too close to the start/end of the recording for the current window.")
+                return
+            self.peth_result = result
+            self.setWindowTitle(f"Event PETH — {event_name} ({self.mode_str})")
+            show_window_toast(ctx, f"Event PETH: {result['trial_matrix'].shape[0]} trial(s) for '{event_name}'")
+            self._redraw()
+
+        def _on_error(msg):
+            self.combo_event.setEnabled(True)
+            show_error(ctx, f"Event PETH failed: {msg}")
+
+        if ctx.settings.get("background_loading"):
+            show_window_toast(ctx, f"Computing Event PETH for '{event_name}'…")
+        run_in_background(ctx, _work, _on_success, _on_error)
 
     def _row_order(self):
         matrix = self.peth_result["trial_matrix"]
@@ -140,12 +182,22 @@ class _EventPethResultsDialog(QDialog):
         return np.arange(n)
 
     def _redraw(self):
+        if self.peth_result is None:
+            return
         result = self.peth_result
         time_axis = result["time_axis"]
         matrix = result["trial_matrix"]
         mean_trace = result["mean_trace"]
         sem_trace = result["sem_trace"]
 
+        self.lbl_trials.setText(f"{matrix.shape[0]} trial(s)")
+
+        # Must remove the colorbar before clearing ax_heat — it restores
+        # ax_heat's original (pre-colorbar) subplot geometry on removal,
+        # which breaks if ax_heat's state has already changed underneath it.
+        if self._colorbar is not None:
+            self._colorbar.remove()
+            self._colorbar = None
         self.ax_heat.clear()
         self.ax_line.clear()
 
@@ -159,7 +211,7 @@ class _EventPethResultsDialog(QDialog):
                 extent=[-self.pre, self.post, matrix.shape[0], 0],
                 vmin=-5, vmax=5, interpolation='nearest',
             )
-            self.fig.colorbar(im, ax=self.ax_heat, fraction=0.046, pad=0.04, label="Z-score")
+            self._colorbar = self.fig.colorbar(im, ax=self.ax_heat, fraction=0.046, pad=0.04, label="Z-score")
 
         tfs, lfs, _ = fig_font_sizes(self.fig)
         self.ax_heat.set_ylabel("Trial", fontweight='bold', fontsize=lfs)
@@ -189,35 +241,6 @@ def launch_event_peth(ctx):
         show_error(ctx, "No events found in this recording.")
         return
 
-    picker = _EventPickerDialog(ctx.win, ctx, groups)
-    if picker.exec() != QDialog.DialogCode.Accepted or not picker.chosen_name:
-        return
-
-    event_name = picker.chosen_name
-    event_times = groups[event_name]
-    pre, post = get_window(ctx)
-    mode_str = "Corrected" if ctx.show_corrected else "Raw"
-
-    data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
-    time_array = ctx.cache['x']
-    fs = ctx.cache['fs']
-
-    def _work():
-        clean_signal = pl.smooth_signal(data_source, fs)
-        return pl.compute_event_zscore_peth(time_array, clean_signal, event_times, pre, post)
-
-    def _on_success(result):
-        if result["trial_matrix"].shape[0] == 0:
-            show_error(ctx, f"No usable trials for '{event_name}' — all occurrences were "
-                             f"too close to the start/end of the recording for the current window.")
-            return
-        dlg = _EventPethResultsDialog(ctx.win, ctx, event_name, result, mode_str, pre, post)
-        show_window_toast(ctx, f"Event PETH: {result['trial_matrix'].shape[0]} trial(s) for '{event_name}'")
-        dlg.exec()
-
-    def _on_error(msg):
-        show_error(ctx, f"Event PETH failed: {msg}")
-
-    if ctx.settings.get("background_loading"):
-        show_window_toast(ctx, f"Computing Event PETH for '{event_name}'…")
-    run_in_background(ctx, _work, _on_success, _on_error)
+    initial_name = sorted(groups.keys())[0]
+    dlg = _EventPethResultsDialog(ctx.win, ctx, groups, initial_name)
+    dlg.exec()

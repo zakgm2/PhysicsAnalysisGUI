@@ -184,9 +184,26 @@ def on_press(ctx, event):
             ctx.press_x, ctx.press_y = event.x, event.y
         return
 
+    # Splice mode: same drag-detection pattern as Curve Fit above
+    if ctx.plot_type_combo.currentText() == "Splice":
+        if event.button == 1 and not event.dblclick:
+            ctx.press_x, ctx.press_y = event.x, event.y
+        return
+
     # Middle-click: reset zoom
     if event.button == 2:
         reset_zoom(ctx)
+        return
+
+    # Falls through to here only for a plain left-press in the default
+    # zoom mode — RectangleSelector's own handler (registered separately)
+    # is about to start its drag-select. Suppress the hover tracker's own
+    # blit for the duration (see on_motion) so the two blit systems stop
+    # fighting over the same canvas region every motion tick, which is
+    # what was causing the selection rectangle to visibly flash/flicker
+    # while resizing it.
+    if event.button == 1 and not event.dblclick:
+        ctx._rect_dragging = True
 
 
 def on_motion(ctx, event):
@@ -215,6 +232,15 @@ def on_motion(ctx, event):
         if now - ctx._last_pan_draw_time >= _PAN_MIN_FRAME_INTERVAL:
             ctx._last_pan_draw_time = now
             canvas.draw_idle()
+        return
+
+    # RectangleSelector (drag-to-zoom) is mid-drag — its own motion handler
+    # (registered separately) does its own blit of the selection rectangle.
+    # The hover tracker below does an independent blit of the same canvas
+    # region on every tick too; running both was a race between two blit
+    # systems repainting the same area, which is what was causing the
+    # selection rectangle to visibly flash while resizing it.
+    if ctx._rect_dragging:
         return
 
     # 2. Hover tracker (blit-based)
@@ -346,6 +372,10 @@ def on_release(ctx, event):
     if was_dragging:
         _refresh_hover_bg(ctx)
 
+    if ctx._rect_dragging:
+        ctx._rect_dragging = False
+        _refresh_hover_bg(ctx)
+
     if (ctx.plot_type_combo.currentText() == "Curve Fit"
             and event.button == 1
             and event.inaxes == ctx.ax
@@ -392,6 +422,26 @@ def on_release(ctx, event):
         except Exception as e:
             show_error(ctx, f"Curve fit capture failed: {e}")
             ctx.slope_clicks.clear()
+        return
+
+    if (ctx.plot_type_combo.currentText() == "Splice"
+            and event.button == 1
+            and event.inaxes == ctx.ax
+            and event.xdata is not None):
+        from .analysis.splice import apply_splice_at_points
+
+        dx = abs(event.x - ctx.press_x) if ctx.press_x is not None else 999
+        dy = abs(event.y - ctx.press_y) if ctx.press_y is not None else 999
+        if dx > 5 or dy > 5:
+            return
+
+        ctx.slope_clicks.append(event.xdata)
+        show_window_toast(ctx, f"Point {len(ctx.slope_clicks)}: {event.xdata:.2f}s")
+
+        if len(ctx.slope_clicks) == 2:
+            t1, t2 = ctx.slope_clicks
+            ctx.slope_clicks.clear()
+            apply_splice_at_points(ctx, t1, t2)
 
 
 def zoom_factory(ctx, base_scale=1.2):

@@ -308,7 +308,13 @@ def set_grid_visibility(ctx, show):
         from .pg_engine import pg_set_grid_visibility
         pg_set_grid_visibility(ctx)
         return
-    ctx.ax.grid(ctx.show_grid, linestyle=':', alpha=0.4, color=mpl_colors(ctx.settings.get("theme", "light"))["grid"])
+    if ctx.show_grid:
+        # Passing style kwargs alongside grid(False, ...) makes matplotlib
+        # force the grid back ON regardless of the False — only pass them
+        # when actually turning it on.
+        ctx.ax.grid(True, linestyle=':', alpha=0.4, color=mpl_colors(ctx.settings.get("theme", "light"))["grid"])
+    else:
+        ctx.ax.grid(False)
     ctx.canvas.draw_idle()
 
 

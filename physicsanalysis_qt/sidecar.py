@@ -48,6 +48,25 @@ def save_markers(ctx):
         show_error(ctx, f"Could not save markers: {e}")
 
 
+def clear_json_saves(ctx):
+    """Deletes every file inside the JSON saves/ folder (not the folder
+    itself) — used by Undo All Changes so a previously-saved sidecar
+    doesn't get silently reloaded right back after the undo."""
+    path = sidecar_path(ctx)
+    if not path:
+        return
+    json_dir = os.path.dirname(path)
+    if not os.path.isdir(json_dir):
+        return
+    for name in os.listdir(json_dir):
+        entry = os.path.join(json_dir, name)
+        if os.path.isfile(entry):
+            try:
+                os.remove(entry)
+            except OSError as e:
+                show_error(ctx, f"Could not clear {name}: {e}")
+
+
 def load_markers_from_sidecar(ctx):
     """Overwrite cache['markers'] from the sidecar if one exists; otherwise
     leave whatever markers the loader already populated (e.g. TDT epoc

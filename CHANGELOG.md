@@ -2,6 +2,27 @@
 
 ---
 
+## v2.6.0
+**New: Splice Recording**
+- New left-side icon sidebar (📍 Add Marker, ✂ Splice, 💾 Save Changes, ↺ Undo All Changes), collapsible via a small arrow handle — tools that change how the data looks/is analyzed without ever touching the original raw data, moved out of the top toolbar rather than duplicated.
+- **Splice Recording**: pick a mode (Keep only this range / Cut out this range — removes an artifact from the middle and stitches the remainder together, shifting everything after the cut so the timeline stays contiguous) then click two points directly on the plot to mark the range, same click-to-anchor pattern as Curve Fit. No typed start/end numbers. Works on a copy — the original recording is never mutated, restorable at any time via the same icon (becomes "Restore Full Recording").
+- The active splice can now be saved (`JSON saves/splice.json`, alongside the markers sidecar) via Save Changes, and is automatically reapplied the next time the folder is opened — previously it was memory-only and lost on restart/reload.
+- "Undo All Changes": discards marker/splice changes (including previously-saved ones) with a confirmation dialog, clears the `JSON saves/` folder's contents (not the folder itself), and re-reads the file fresh.
+- Architecture: the actual splice computation (trim, cut-and-stitch, timeline-shifting, marker filtering) lives in PhysicsLibrary 1.7.0's new `splice_keep_inside`/`splice_cut_out` — this module is GUI orchestration only (dialogs, click capture, sidecar I/O), matching how Event PETH/Peak Finder already split GUI vs. computation.
+
+**Event PETH / Peak Finder improvements**
+- Fixed the results heatmap's colorbar stacking a new one on every row-order change or event switch instead of replacing the old one (needed to remove it before, not after, clearing the axes — order mattered because it restores the axes' pre-colorbar geometry on removal).
+- Event PETH no longer requires closing and reopening to look at a different event — an Event dropdown right in the results dialog switches and recomputes in place. Also gained its own local pre/post window fields (defaulting to the global Window setting) with a Recalculate button, same pattern Curve Fit already used, instead of only ever using the global window.
+- Peak Finder reworked: default scope now scans every event type at once and shows a summary (occurrences/hit-rate/avg z-score per type, sorted so likely-real events float to the top) with nothing added to the plot until you choose to — instead of requiring you to already know which single event to check. Both Event PETH's and Peak Finder's event lists now pull from every event TDT actually detected in the recording, not just what's already been added to the plot as a marker.
+
+**Fixed**
+- Grid toggle (Edit Attributes → Show Grid) didn't actually toggle — `ax.grid(False, color=..., linestyle=...)` is a matplotlib gotcha where passing style kwargs alongside `False` makes it force the grid back **on** regardless. Only pass those kwargs when actually turning it on.
+- `RectangleSelector` (drag-to-zoom) visibly flashed while resizing the selection — the hover-tracker dot was doing its own independent canvas blit on every mouse-move tick during the drag, racing `RectangleSelector`'s own blit for the same region. Suppressed the hover tracker for the duration of a rect-select drag.
+- The 📍 Add Marker icon lost its pin glyph and became clipped/garbled text ("Placing 'Marker'…" in a 44×44 square) while placing, and never got its icon back afterward — `toggle_marker_mode()` was overwriting the button's text directly, a leftover from when it was a full-width text button. Now reflects state via tooltip + background color only, never touches the icon's text.
+- Oxysoft loader: a file whose Legend block doesn't match the expected `O2Hb`/`HHb` column format failed with a cryptic `not enough values to unpack` instead of saying what's actually wrong (PhysicsLibrary 1.7.0).
+
+---
+
 ## v2.5.0
 **New: Event PETH (GuPPy-style, stacked heatmap + trial average)**
 - **Advanced Analysis ▾ → Event PETH**: pick an event/marker name and Z-score every occurrence of it against its own pre-event baseline, stacked as one row per trial in a heatmap (colorbar included) with the trial-averaged trace ± SEM plotted below — lets you actually see whether a response is consistent across trials, not just look at one clicked moment. Row order is sortable (trial order vs. peak amplitude) without recomputing. Distinct from the existing single-click PETH, which stays as-is.
