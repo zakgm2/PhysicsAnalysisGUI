@@ -10,6 +10,7 @@ import time
 import numpy as np
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import QInputDialog
 
 _PAN_MIN_FRAME_INTERVAL = 1 / 30  # cap pan redraws at ~30 fps
 
@@ -34,14 +35,127 @@ def on_select(ctx, eclick, erelease):
     show_window_toast(ctx, "Zoomed to Selection")
 
 
+_DBLCLICK_MAX_INTERVAL = 0.4  # seconds
+_DBLCLICK_MAX_PIXEL_DIST = 6
+
+
+def _is_manual_double_click(ctx, event):
+    """Own double-click detection, independent of matplotlib's
+    event.dblclick — see the note on ctx._last_click_time."""
+    now = time.monotonic()
+    is_double = False
+    if ctx._last_click_xy is not None and now - ctx._last_click_time <= _DBLCLICK_MAX_INTERVAL:
+        lx, ly = ctx._last_click_xy
+        if abs(event.x - lx) <= _DBLCLICK_MAX_PIXEL_DIST and abs(event.y - ly) <= _DBLCLICK_MAX_PIXEL_DIST:
+            is_double = True
+    if is_double:
+        ctx._last_click_time = 0.0
+        ctx._last_click_xy = None
+    else:
+        ctx._last_click_time = now
+        ctx._last_click_xy = (event.x, event.y)
+    return is_double
+
+
+def _apply_and_redraw(ctx):
+    if ctx.settings.get("plot_engine") == "pyqtgraph":
+        plotting.simple_plot(ctx)  # pg has no incremental "apply", full rebuild
+    else:
+        plotting._apply_plot_attrs(ctx)
+        ctx.canvas.draw_idle()
+        _refresh_hover_bg(ctx)
+
+
+def _text_hit(fig, artist, px, py):
+    try:
+        bbox = artist.get_window_extent(renderer=fig.canvas.get_renderer())
+    except Exception:
+        return False
+    return bbox.contains(px, py)
+
+
+def _rename_legend_entry(ctx, current_label, new_label):
+    plot_attrs = ctx.plot_attrs
+    saved_entry_map = {orig: (new, vis) for orig, new, vis in (plot_attrs["leg_entries"] or [])}
+    target_orig = None
+    target_vis = True
+    for orig in ctx._legend_entries:
+        disp, vis = saved_entry_map.get(orig, (orig, True))
+        if disp == current_label:
+            target_orig, target_vis = orig, vis
+            break
+    if target_orig is None:
+        return
+    saved_entry_map[target_orig] = (new_label, target_vis)
+    plot_attrs["leg_entries"] = [
+        (orig, *saved_entry_map.get(orig, (orig, True))) for orig in ctx._legend_entries
+    ]
+
+
+def _try_rename_text_element(ctx, event):
+    """Double-click on the title, an axis label, or a legend entry to
+    retype just that one — matplotlib engine only (title/labels/legend
+    are Text artists we can hit-test against click position)."""
+    if event.x is None or event.y is None or ctx.settings.get("plot_engine") == "pyqtgraph":
+        return False
+
+    ax, fig = ctx.ax, ctx.fig
+    px, py = event.x, event.y
+
+    targets = [
+        (ax.title, "Rename Title", "Title:", "title"),
+        (ax.xaxis.label, "Rename X Label", "X Label:", "xlabel"),
+        (ax.yaxis.label, "Rename Y Label", "Y Label:", "ylabel"),
+    ]
+    for artist, dlg_title, dlg_label, attr_key in targets:
+        if artist.get_text() and _text_hit(fig, artist, px, py):
+            new_text, ok = QInputDialog.getText(ctx.win, dlg_title, dlg_label, text=artist.get_text())
+            if ok and new_text.strip():
+                ctx.plot_attrs[attr_key] = new_text.strip()
+                _apply_and_redraw(ctx)
+            return True
+
+    legend = ax.get_legend()
+    if legend is not None:
+        for txt in legend.get_texts():
+            if _text_hit(fig, txt, px, py):
+                new_text, ok = QInputDialog.getText(ctx.win, "Rename Legend Entry", "Label:", text=txt.get_text())
+                if ok and new_text.strip():
+                    _rename_legend_entry(ctx, txt.get_text(), new_text.strip())
+                    _apply_and_redraw(ctx)
+                return True
+
+    return False
+
+
 def on_press(ctx, event):
     from .analysis.dispatch import analysis_type
+
+    is_double = event.button == 1 and _is_manual_double_click(ctx, event)
+
+    if is_double:
+        # _try_rename_text_element may open a modal QInputDialog — same
+        # RectangleSelector desync issue as analysis_type's own dialogs
+        # (see its comment): its press handler also sees this same click
+        # before we know whether we're about to block on a dialog, so
+        # deactivate first and reactivate on the next Qt tick rather than
+        # synchronously, for the same reason spelled out there.
+        ctx.rect_selector.set_active(False)
+        try:
+            handled = _try_rename_text_element(ctx, event)
+        finally:
+            def _reactivate():
+                ctx.rect_selector.clear()
+                ctx.rect_selector.set_active(True)
+            QTimer.singleShot(0, _reactivate)
+        if handled:
+            return
 
     if event.inaxes != ctx.ax:
         return
 
     # Double left-click: routed analysis (FFT / PETH / Curve Fit hint)
-    if event.dblclick and event.button == 1 and event.xdata is not None:
+    if is_double and event.xdata is not None:
         ctx.slope_clicks.clear()
         analysis_type(ctx, event.xdata)
         return
@@ -70,9 +184,26 @@ def on_press(ctx, event):
             ctx.press_x, ctx.press_y = event.x, event.y
         return
 
+    # Splice mode: same drag-detection pattern as Curve Fit above
+    if ctx.plot_type_combo.currentText() == "Splice":
+        if event.button == 1 and not event.dblclick:
+            ctx.press_x, ctx.press_y = event.x, event.y
+        return
+
     # Middle-click: reset zoom
     if event.button == 2:
         reset_zoom(ctx)
+        return
+
+    # Falls through to here only for a plain left-press in the default
+    # zoom mode — RectangleSelector's own handler (registered separately)
+    # is about to start its drag-select. Suppress the hover tracker's own
+    # blit for the duration (see on_motion) so the two blit systems stop
+    # fighting over the same canvas region every motion tick, which is
+    # what was causing the selection rectangle to visibly flash/flicker
+    # while resizing it.
+    if event.button == 1 and not event.dblclick:
+        ctx._rect_dragging = True
 
 
 def on_motion(ctx, event):
@@ -101,6 +232,15 @@ def on_motion(ctx, event):
         if now - ctx._last_pan_draw_time >= _PAN_MIN_FRAME_INTERVAL:
             ctx._last_pan_draw_time = now
             canvas.draw_idle()
+        return
+
+    # RectangleSelector (drag-to-zoom) is mid-drag — its own motion handler
+    # (registered separately) does its own blit of the selection rectangle.
+    # The hover tracker below does an independent blit of the same canvas
+    # region on every tick too; running both was a race between two blit
+    # systems repainting the same area, which is what was causing the
+    # selection rectangle to visibly flash while resizing it.
+    if ctx._rect_dragging:
         return
 
     # 2. Hover tracker (blit-based)
@@ -232,6 +372,10 @@ def on_release(ctx, event):
     if was_dragging:
         _refresh_hover_bg(ctx)
 
+    if ctx._rect_dragging:
+        ctx._rect_dragging = False
+        _refresh_hover_bg(ctx)
+
     if (ctx.plot_type_combo.currentText() == "Curve Fit"
             and event.button == 1
             and event.inaxes == ctx.ax
@@ -278,6 +422,26 @@ def on_release(ctx, event):
         except Exception as e:
             show_error(ctx, f"Curve fit capture failed: {e}")
             ctx.slope_clicks.clear()
+        return
+
+    if (ctx.plot_type_combo.currentText() == "Splice"
+            and event.button == 1
+            and event.inaxes == ctx.ax
+            and event.xdata is not None):
+        from .analysis.splice import apply_splice_at_points
+
+        dx = abs(event.x - ctx.press_x) if ctx.press_x is not None else 999
+        dy = abs(event.y - ctx.press_y) if ctx.press_y is not None else 999
+        if dx > 5 or dy > 5:
+            return
+
+        ctx.slope_clicks.append(event.xdata)
+        show_window_toast(ctx, f"Point {len(ctx.slope_clicks)}: {event.xdata:.2f}s")
+
+        if len(ctx.slope_clicks) == 2:
+            t1, t2 = ctx.slope_clicks
+            ctx.slope_clicks.clear()
+            apply_splice_at_points(ctx, t1, t2)
 
 
 def zoom_factory(ctx, base_scale=1.2):

@@ -12,12 +12,13 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.widgets import RectangleSelector
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QSizePolicy, QStatusBar, QStackedWidget,
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QStatusBar, QStackedWidget,
 )
 
 from .. import interaction
 from ..pg_engine import build_pg_widget, sync_pg_margins
 from .toolbar import build_toolbar
+from .edit_toolbar import build_edit_toolbar
 
 
 class _PlotStack(QStackedWidget):
@@ -70,8 +71,17 @@ def build_main_window(ctx):
 
     central = QWidget()
     ctx.win.setCentralWidget(central)
-    root_layout = QVBoxLayout(central)
+    outer_layout = QHBoxLayout(central)
+    outer_layout.setContentsMargins(0, 0, 0, 0)
+    outer_layout.setSpacing(0)
+
+    edit_toolbar = build_edit_toolbar(ctx)
+    outer_layout.addWidget(edit_toolbar)
+
+    right_column = QWidget()
+    root_layout = QVBoxLayout(right_column)
     root_layout.setContentsMargins(0, 0, 0, 0)
+    outer_layout.addWidget(right_column, stretch=1)
 
     toolbar = build_toolbar(ctx)
     root_layout.addWidget(toolbar)

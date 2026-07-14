@@ -532,11 +532,16 @@ class AddMarkerDialog(QDialog):
 
 def toggle_marker_mode(ctx):
     """Turn placement mode off, or (when off) open the Add Marker dialog to
-    configure and start it."""
+    configure and start it. Reflects state via the button's style/tooltip
+    only — never its text/icon, since ctx.btn_add_marker is a small
+    fixed-size icon button (see ui/edit_toolbar.py) that a long label
+    like "Placing 'Marker'…" would just clip/garble."""
     if ctx.marker_mode:
         ctx.marker_mode = False
         ctx.btn_add_marker.setStyleSheet("")
-        ctx.btn_add_marker.setText("Add Marker")
+        ctx.btn_add_marker.setToolTip(
+            "Add Marker — click the plot to place markers (non-destructive, "
+            "stored separately from the raw recording)")
         show_window_toast(ctx, "Marker mode OFF")
         return
 
@@ -549,7 +554,8 @@ def toggle_marker_mode(ctx):
         ctx.marker_mode = True
         label = ctx.marker_stamp["label"]
         ctx.btn_add_marker.setStyleSheet("background-color: #FFD54F;")
-        ctx.btn_add_marker.setText(f"Placing '{label}'…")
+        ctx.btn_add_marker.setToolTip(
+            f"Placing '{label}' markers — click the plot, click this again to stop")
         show_window_toast(ctx, f"Placing '{label}' markers — click the plot, "
                                 "click Add Marker again to stop")
 

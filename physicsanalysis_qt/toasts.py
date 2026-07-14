@@ -10,7 +10,11 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel, QMessageBox
 
 
 def show_window_toast(ctx, message, duration=2500):
-    toast = QWidget(ctx.win, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
+    # A plain child widget (no top-level window flags) so it's positioned
+    # in the window's own coordinate space and moves/stacks with it,
+    # instead of a separate top-level window pinned to a screen position.
+    toast = QWidget(ctx.win)
+    toast.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
     toast.setStyleSheet(
         "background-color: #333; border-radius: 6px; padding: 8px;"
     )
@@ -20,11 +24,11 @@ def show_window_toast(ctx, message, duration=2500):
     layout.addWidget(label)
     toast.adjustSize()
 
-    parent_geom = ctx.win.geometry()
-    x = parent_geom.x() + parent_geom.width() - toast.width() - 30
-    y = parent_geom.y() + parent_geom.height() - toast.height() - 60
+    x = ctx.win.width() - toast.width() - 30
+    y = ctx.win.height() - toast.height() - 60
     toast.move(x, y)
     toast.show()
+    toast.raise_()
     QTimer.singleShot(duration, toast.close)
 
 

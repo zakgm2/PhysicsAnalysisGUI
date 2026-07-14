@@ -13,6 +13,7 @@ import PhysicsLibrary as pl
 
 from ..background import run_in_background
 from ..sidecar import load_markers_from_sidecar
+from ..analysis.splice import load_splice_from_sidecar
 from ..toasts import show_error, show_success, show_window_toast
 
 
@@ -51,6 +52,11 @@ def _load_folder(ctx, folder_path):
         return pl.process_tdt_folder(folder_path)
 
     def _on_success(result):
+        # A stale splice from whatever was loaded before this must not
+        # carry over — Open (unlike Reload, which already clears this)
+        # can load an entirely different folder.
+        ctx.original_cache = None
+        ctx._active_splice = None
         ctx.cache = {
             'source':      'TDT',
             'source_path': folder_path,
@@ -63,6 +69,7 @@ def _load_folder(ctx, folder_path):
             'markers':     [],
         }
         load_markers_from_sidecar(ctx)
+        load_splice_from_sidecar(ctx)
         simple_plot(ctx)
         show_success(ctx, f"Folder: {ctx.cache['store']}")
 

@@ -9,11 +9,32 @@ module can see exactly what state exists without hunting for `global`
 statements.
 """
 
+import json
 import os
+from pathlib import Path
 
 _MARKER_COLORS = ["green", "red", "blue", "orange", "purple", "black"]
 
 _PHI = 1.6180339887  # golden ratio
+
+_SETTINGS_PATH = Path.home() / ".physicsanalysis" / "settings.json"
+
+
+def load_settings():
+    settings = default_settings()
+    try:
+        with open(_SETTINGS_PATH, "r", encoding="utf-8") as fh:
+            saved = json.load(fh)
+        settings.update({k: v for k, v in saved.items() if k in settings})
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return settings
+
+
+def save_settings(settings):
+    _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_SETTINGS_PATH, "w", encoding="utf-8") as fh:
+        json.dump(settings, fh, indent=2)
 
 
 def default_plot_attrs():
@@ -38,6 +59,7 @@ def default_settings():
         "decimate_max_points": 2000,
         "background_loading":  True,
         "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph"
+        "theme":               "light",       # "light" | "dark"
     }
 
 
@@ -86,6 +108,17 @@ class AppState:
 
         # Data
         self.cache = None
+        # The unspliced full recording, saved off the first time Splice
+        # Recording is used, so Restore Full Recording can bring it back
+        # without re-loading from disk. None when no splice is active.
+        self.original_cache = None
+        # {"mode": ..., "start": ..., "end": ...} for the currently active
+        # splice, if any — what save_splice() (analysis/splice.py) writes
+        # to the JSON saves/ sidecar. None when no splice is active.
+        self._active_splice = None
+        # Set by analysis/splice.py's start_splice_flow() while the user
+        # is choosing what kind of splice, read by apply_splice_at_points().
+        self._pending_splice_mode = None
         self.selected_path = None
         self.last_dir = None  # last folder browsed in any Open dialog
         self.show_corrected = True
@@ -125,6 +158,11 @@ class AppState:
         self.is_dragging = False
         self.press_x = None
         self.press_y = None
+        # True while RectangleSelector's own drag-to-zoom is in progress
+        # (see interaction.py's on_press/on_motion/on_release) — suppresses
+        # the hover tracker's own blit for the duration so the two blit
+        # systems don't fight over the same canvas region.
+        self._rect_dragging = False
         self._last_pan_draw_time = 0.0
 
         # Decimation: (line, full_x, full_y) for every plotted trace, so its
@@ -135,8 +173,17 @@ class AppState:
         # Curve fit click capture
         self.slope_clicks = []
 
-        # Settings (Options dialog)
-        self.settings = default_settings()
+        # Manual double-click detection for the matplotlib canvas (see
+        # interaction.py's on_press) — matplotlib's own event.dblclick can
+        # miss pairs because RectangleSelector's press handler also sees
+        # the first click of a would-be double-click before we know it's
+        # part of one, occasionally leaving its internal state out of sync
+        # with matplotlib's click-timing tracker.
+        self._last_click_time = 0.0
+        self._last_click_xy = None
+
+        # Settings (Options dialog) — persisted to disk, see load_settings/save_settings
+        self.settings = load_settings()
 
         # Engine-agnostic cache of the computed default title/labels and
         # legend entry order, so Edit Attributes can read/apply consistent

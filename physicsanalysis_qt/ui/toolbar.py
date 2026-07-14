@@ -1,12 +1,14 @@
 """
 ui/toolbar.py
 ---------------
-Builds the top toolbar: Open menu, grid toggle, analysis mode dropdown,
-marker controls, view controls.
+Builds the top toolbar: Open menu, analysis mode dropdown, view
+controls. Grid visibility lives in the Edit Attributes dialog
+(attributes.py); Add Marker, Splice, and Save Markers live in the left
+icon sidebar (edit_toolbar.py), not here.
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QMenu, QCheckBox, QLabel,
+    QWidget, QHBoxLayout, QPushButton, QMenu, QLabel,
     QComboBox,
 )
 
@@ -15,10 +17,8 @@ from ..loaders.oxysoft import open_file, reload_file
 from ..loaders.generic import launch_generic_file_loader, reload_generic
 from ..loaders.pt2 import launch_pt2_viewer
 from ..loaders.text_field_study import open_field_study_folder
-from ..markers import toggle_marker_mode
-from ..sidecar import save_markers
 from ..interaction import reset_zoom
-from ..plotting import export_canvas_action, set_grid_visibility
+from ..plotting import export_canvas_action
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
@@ -26,10 +26,24 @@ from ..analysis.window_settings import init_window_settings, open_window_dialog,
 from ..analysis.intervals import launch_intervals
 from ..analysis.text_field_study import launch_field_study_results
 from ..analysis.field_study_validation import launch_field_study_validation
+from ..analysis.event_peth import launch_event_peth
+from ..analysis.peak_finder import launch_peak_finder
 
 
-def _toggle_grid(ctx, state):
-    set_grid_visibility(ctx, state)
+def _on_plot_mode_changed(ctx, text):
+    """Picking 'Splice' from this combo asks the splice mode (keep vs
+    cut) up front, same as clicking the sidebar's scissors icon does —
+    both funnel through here so there's one place that decides what
+    happens next. Reverts to whatever mode was active before if the
+    mode dialog gets cancelled, instead of leaving 'Splice' selected
+    with nothing configured."""
+    if text == "Splice":
+        from ..analysis.splice import start_splice_flow
+        started = start_splice_flow(ctx)
+        if not started:
+            ctx.plot_type_combo.setCurrentText(getattr(ctx, '_pre_splice_mode', 'Analysis'))
+    else:
+        ctx._pre_splice_mode = text
 
 
 def _reload_current(ctx):
@@ -44,6 +58,7 @@ def _reload_current(ctx):
     if not path:
         show_error(ctx, "Nothing to reload — no source file/folder on record.")
         return
+    ctx.original_cache = None  # a fresh disk read makes any saved pre-splice cache stale
     if source == 'TDT':
         reload_folder(ctx, path)
     elif source == 'Oxysoft':
@@ -93,15 +108,24 @@ def build_toolbar(ctx):
 
     layout.addWidget(QLabel("|"))
 
-    grid_check = QCheckBox("Grid")
-    grid_check.setChecked(True)
-    grid_check.stateChanged.connect(lambda state: _toggle_grid(ctx, state))
-    layout.addWidget(grid_check)
-
-    layout.addWidget(QLabel("|"))
+    analysis_menu_btn = QPushButton("Advanced Analysis ▾")
+    analysis_menu = QMenu(analysis_menu_btn)
+    act_event_peth = analysis_menu.addAction(
+        "Event PETH (Z-score all occurrences)…", lambda: launch_event_peth(ctx))
+    act_event_peth.setToolTip("Pick an event/marker name — Z-scores every occurrence of it "
+                               "against its own baseline, stacks them as a heatmap, and plots "
+                               "the trial-averaged trace, so you can check consistency across trials.")
+    act_find_peaks = analysis_menu.addAction(
+        "Find Significant Peaks…", lambda: launch_peak_finder(ctx))
+    act_find_peaks.setToolTip("Check every event type at once for an aligned neural peak (or "
+                               "scan the whole recording blind) — see a summary of which event "
+                               "types actually line up with a real response before adding anything.")
+    analysis_menu_btn.setMenu(analysis_menu)
+    layout.addWidget(analysis_menu_btn)
 
     ctx.plot_type_combo = QComboBox()
-    ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit"])
+    ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit", "Splice"])
+    ctx.plot_type_combo.currentTextChanged.connect(lambda text: _on_plot_mode_changed(ctx, text))
     layout.addWidget(ctx.plot_type_combo)
 
     init_window_settings(ctx)
@@ -110,14 +134,6 @@ def build_toolbar(ctx):
     layout.addWidget(ctx.btn_window)
 
     layout.addWidget(QLabel("|"))
-
-    ctx.btn_add_marker = QPushButton("Add Marker")
-    ctx.btn_add_marker.clicked.connect(lambda: toggle_marker_mode(ctx))
-    layout.addWidget(ctx.btn_add_marker)
-
-    btn_save_markers = QPushButton("Save Markers")
-    btn_save_markers.clicked.connect(lambda: save_markers(ctx))
-    layout.addWidget(btn_save_markers)
 
     btn_intervals = QPushButton("Measure Intervals")
     btn_intervals.clicked.connect(lambda: launch_intervals(ctx))

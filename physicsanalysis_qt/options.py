@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QMessageBox,
 )
 
+from . import plotting
+
 
 _ENGINE_LABELS = {
     "matplotlib": "Matplotlib (CPU)",
@@ -29,6 +31,15 @@ class OptionsDialog(QDialog):
         self.setWindowTitle("Options")
         self.resize(480, 340)
         layout = QVBoxLayout(self)
+
+        gb_theme = QGroupBox("Appearance")
+        gt = QGridLayout(gb_theme)
+        gt.addWidget(QLabel("Theme:"), 0, 0)
+        self.combo_theme = QComboBox()
+        self.combo_theme.addItems(["Light", "Dark"])
+        self.combo_theme.setCurrentText(ctx.settings.get("theme", "light").capitalize())
+        gt.addWidget(self.combo_theme, 0, 1)
+        layout.addWidget(gb_theme)
 
         gb_engine = QGroupBox("Plot Engine (main plot only)")
         g0 = QGridLayout(gb_engine)
@@ -115,7 +126,23 @@ class OptionsDialog(QDialog):
         new_engine = _ENGINE_VALUES[self.combo_engine.currentText()]
         engine_changed = new_engine != self.ctx.settings["plot_engine"]
         self.ctx.settings["plot_engine"] = new_engine
+
+        new_theme = self.combo_theme.currentText().lower()
+        theme_changed = new_theme != self.ctx.settings.get("theme", "light")
+        self.ctx.settings["theme"] = new_theme
+
+        from .context import save_settings
+        save_settings(self.ctx.settings)
+
         self.accept()
+
+        if theme_changed:
+            from .theme import apply_theme
+            apply_theme(self.ctx.app, new_theme)
+            if self.ctx.cache is not None:
+                plotting.simple_plot(self.ctx)
+            else:
+                plotting.apply_theme_to_canvas(self.ctx)
 
         if engine_changed:
             from .ui.main_window import switch_plot_engine
