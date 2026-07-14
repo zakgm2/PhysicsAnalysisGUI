@@ -18,13 +18,17 @@ import sys
 from PyQt6.QtWidgets import QApplication
 
 from physicsanalysis_qt.context import AppState
+from physicsanalysis_qt.plotting import apply_theme_to_canvas
+from physicsanalysis_qt.theme import apply_theme
 from physicsanalysis_qt.ui.main_window import build_main_window
 
 
 def main():
     app = QApplication(sys.argv)
     ctx = AppState(app)
+    apply_theme(app, ctx.settings.get("theme", "light"))
     build_main_window(ctx)
+    apply_theme_to_canvas(ctx)
     ctx.win.show()
     sys.exit(app.exec())
 

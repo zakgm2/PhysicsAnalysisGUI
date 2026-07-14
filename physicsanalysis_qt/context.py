@@ -9,11 +9,32 @@ module can see exactly what state exists without hunting for `global`
 statements.
 """
 
+import json
 import os
+from pathlib import Path
 
 _MARKER_COLORS = ["green", "red", "blue", "orange", "purple", "black"]
 
 _PHI = 1.6180339887  # golden ratio
+
+_SETTINGS_PATH = Path.home() / ".physicsanalysis" / "settings.json"
+
+
+def load_settings():
+    settings = default_settings()
+    try:
+        with open(_SETTINGS_PATH, "r", encoding="utf-8") as fh:
+            saved = json.load(fh)
+        settings.update({k: v for k, v in saved.items() if k in settings})
+    except (FileNotFoundError, json.JSONDecodeError):
+        pass
+    return settings
+
+
+def save_settings(settings):
+    _SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(_SETTINGS_PATH, "w", encoding="utf-8") as fh:
+        json.dump(settings, fh, indent=2)
 
 
 def default_plot_attrs():
@@ -38,6 +59,7 @@ def default_settings():
         "decimate_max_points": 2000,
         "background_loading":  True,
         "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph"
+        "theme":               "light",       # "light" | "dark"
     }
 
 
@@ -135,8 +157,17 @@ class AppState:
         # Curve fit click capture
         self.slope_clicks = []
 
-        # Settings (Options dialog)
-        self.settings = default_settings()
+        # Manual double-click detection for the matplotlib canvas (see
+        # interaction.py's on_press) — matplotlib's own event.dblclick can
+        # miss pairs because RectangleSelector's press handler also sees
+        # the first click of a would-be double-click before we know it's
+        # part of one, occasionally leaving its internal state out of sync
+        # with matplotlib's click-timing tracker.
+        self._last_click_time = 0.0
+        self._last_click_xy = None
+
+        # Settings (Options dialog) — persisted to disk, see load_settings/save_settings
+        self.settings = load_settings()
 
         # Engine-agnostic cache of the computed default title/labels and
         # legend entry order, so Edit Attributes can read/apply consistent

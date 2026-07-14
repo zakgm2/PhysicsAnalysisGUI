@@ -2,6 +2,30 @@
 
 ---
 
+## v2.5.0
+**New: Event PETH (GuPPy-style, stacked heatmap + trial average)**
+- **Advanced Analysis ▾ → Event PETH**: pick an event/marker name and Z-score every occurrence of it against its own pre-event baseline, stacked as one row per trial in a heatmap (colorbar included) with the trial-averaged trace ± SEM plotted below — lets you actually see whether a response is consistent across trials, not just look at one clicked moment. Row order is sortable (trial order vs. peak amplitude) without recomputing. Distinct from the existing single-click PETH, which stays as-is.
+- Event names are pulled from every event TDT actually detected in the recording (not just what's already been added to the plot), so this works on a freshly loaded file with zero markers placed yet.
+
+**New: Find Significant Peaks**
+- **Advanced Analysis ▾ → Find Significant Peaks…**: auto-detects statistically significant transients straight from the signal instead of trusting that event markers line up with real neural activity. Four scopes: scan every event type at once (a summary table — occurrences, hit rate, average z-score per event type, sorted so likely-real events float to the top, nothing added to the plot until you choose to), all occurrences of one chosen event type, one specific event instance, or a blind whole-recording scan unrelated to any marker. Event-scoped modes report per-occurrence found/latency/z-score. Found peaks are added as `AutoPeak`/`AutoTrough` markers, which work immediately with Event PETH.
+- New PhysicsLibrary 1.6.0 functions backing both features: `compute_event_zscore_peth`, `find_significant_peaks`, `find_peak_near_events`.
+
+**Fixed**
+- Toasts were a separate top-level window pinned to a screen position instead of a child of the main window — didn't move/stack with it. Now a real child widget.
+- Double-click-triggered analysis (FFT/PETH/Curve Fit hint) occasionally needed an extra click — matplotlib's own double-click detection could desync from `RectangleSelector`'s press handler seeing the same clicks. Replaced with a manual time+position double-click detector.
+- Options dialog settings (including the default folder) only lived in memory and reset every restart — now persisted to `~/.physicsanalysis/settings.json`.
+- Marker sidecar JSON was saved as a sibling file next to the raw data folder instead of inside it — now saved to a `JSON saves/` subfolder within the loaded folder (old sidecar locations still load as a fallback).
+- A TDT epoc store with a level/buffered logic signal already "high" the instant recording started got a spurious onset marker at exactly t=0 (TDT's synthetic starting-state entry, not a real event) — now filtered out, mirroring the existing `offset == inf` guard for the opposite edge case.
+
+**New: double-click to rename plot text; light/dark mode; Grid moved into Edit Attributes**
+- Double-click the title, X/Y axis label, or a legend entry directly on the plot to retype just that one — updates the same values the Edit Attributes dialog shows.
+- New Options → Appearance → Theme (Light/Dark): a Qt palette swap for every dialog plus matching matplotlib figure/axes/legend/grid colors, persisted like other settings. Applies to the empty canvas at startup too, not just after a file loads.
+- The Grid toggle moved out of the toolbar into Edit Attributes ("Show Grid," next to Bold) — no longer a standalone toolbar checkbox.
+- Toolbar reorganized: Advanced Analysis ▾, the Analysis mode combo, and the Window button now sit together in one section.
+
+---
+
 ## v2.4.1
 **Fixed: Curve Fit results invisible under Windows dark mode**
 - The results box only set `background-color: white`, not the text color — on a system with Windows dark mode enabled, Qt6's automatic dark palette rendered the label text white as well, so fitted parameters were computed and displayed on the plot correctly but unreadable (white on white) above it. Text color is now explicitly pinned to black.

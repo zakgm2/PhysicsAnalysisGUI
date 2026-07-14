@@ -1,12 +1,13 @@
 """
 ui/toolbar.py
 ---------------
-Builds the top toolbar: Open menu, grid toggle, analysis mode dropdown,
-marker controls, view controls.
+Builds the top toolbar: Open menu, analysis mode dropdown, marker
+controls, view controls. Grid visibility lives in the Edit Attributes
+dialog (attributes.py), not here.
 """
 
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QMenu, QCheckBox, QLabel,
+    QWidget, QHBoxLayout, QPushButton, QMenu, QLabel,
     QComboBox,
 )
 
@@ -18,7 +19,7 @@ from ..loaders.text_field_study import open_field_study_folder
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers
 from ..interaction import reset_zoom
-from ..plotting import export_canvas_action, set_grid_visibility
+from ..plotting import export_canvas_action
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
@@ -26,10 +27,8 @@ from ..analysis.window_settings import init_window_settings, open_window_dialog,
 from ..analysis.intervals import launch_intervals
 from ..analysis.text_field_study import launch_field_study_results
 from ..analysis.field_study_validation import launch_field_study_validation
-
-
-def _toggle_grid(ctx, state):
-    set_grid_visibility(ctx, state)
+from ..analysis.event_peth import launch_event_peth
+from ..analysis.peak_finder import launch_peak_finder
 
 
 def _reload_current(ctx):
@@ -93,12 +92,20 @@ def build_toolbar(ctx):
 
     layout.addWidget(QLabel("|"))
 
-    grid_check = QCheckBox("Grid")
-    grid_check.setChecked(True)
-    grid_check.stateChanged.connect(lambda state: _toggle_grid(ctx, state))
-    layout.addWidget(grid_check)
-
-    layout.addWidget(QLabel("|"))
+    analysis_menu_btn = QPushButton("Advanced Analysis ▾")
+    analysis_menu = QMenu(analysis_menu_btn)
+    act_event_peth = analysis_menu.addAction(
+        "Event PETH (Z-score all occurrences)…", lambda: launch_event_peth(ctx))
+    act_event_peth.setToolTip("Pick an event/marker name — Z-scores every occurrence of it "
+                               "against its own baseline, stacks them as a heatmap, and plots "
+                               "the trial-averaged trace, so you can check consistency across trials.")
+    act_find_peaks = analysis_menu.addAction(
+        "Find Significant Peaks…", lambda: launch_peak_finder(ctx))
+    act_find_peaks.setToolTip("Check every event type at once for an aligned neural peak (or "
+                               "scan the whole recording blind) — see a summary of which event "
+                               "types actually line up with a real response before adding anything.")
+    analysis_menu_btn.setMenu(analysis_menu)
+    layout.addWidget(analysis_menu_btn)
 
     ctx.plot_type_combo = QComboBox()
     ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit"])

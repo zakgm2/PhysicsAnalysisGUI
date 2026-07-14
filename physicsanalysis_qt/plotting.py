@@ -13,6 +13,7 @@ import matplotlib.transforms as transforms
 from PyQt6.QtWidgets import QFileDialog
 
 from .fonts import main_plot_scale
+from .theme import mpl_colors
 from .toasts import show_error, show_window_toast
 
 _DECIMATE_MAX_POINTS_DEFAULT = 2000  # fallback if no ctx is available
@@ -86,6 +87,28 @@ def _update_plot_with_notes(ctx, markers):
                      bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', pad=1))
 
 
+def _apply_theme_colors(ctx):
+    """Style the matplotlib figure/axes to match the current light/dark
+    theme — Qt's palette swap (see theme.py) doesn't reach into
+    matplotlib's own rendering, so this has to be applied separately."""
+    colors = mpl_colors(ctx.settings.get("theme", "light"))
+    fig, ax = ctx.fig, ctx.ax
+    fig.set_facecolor(colors["figure"])
+    ax.set_facecolor(colors["axes"])
+    ax.tick_params(colors=colors["text"])
+    for spine in ax.spines.values():
+        spine.set_color(colors["grid"])
+    ax.title.set_color(colors["text"])
+    ax.xaxis.label.set_color(colors["text"])
+    ax.yaxis.label.set_color(colors["text"])
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.get_frame().set_facecolor(colors["axes"])
+        legend.get_frame().set_edgecolor(colors["grid"])
+        for text in legend.get_texts():
+            text.set_color(colors["text"])
+
+
 def _apply_plot_attrs(ctx):
     """Always apply persisted font sizes; only override text when the user set one."""
     ax = ctx.ax
@@ -96,13 +119,14 @@ def _apply_plot_attrs(ctx):
     ylabel_fs = max(6, round(plot_attrs["ylabel_fs"] * scale))
     leg_fs = max(5, round(plot_attrs["leg_fs"] * scale))
 
+    colors = mpl_colors(ctx.settings.get("theme", "light"))
     weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
     title_text = plot_attrs["title"] or ctx._last_title or ax.get_title()
     xlabel_text = plot_attrs["xlabel"] or ctx._last_xlabel or ax.get_xlabel()
     ylabel_text = plot_attrs["ylabel"] or ctx._last_ylabel or ax.get_ylabel()
-    ax.set_title(title_text, fontweight=weight, pad=15, fontsize=title_fs)
-    ax.set_xlabel(xlabel_text, fontweight=weight, fontsize=xlabel_fs)
-    ax.set_ylabel(ylabel_text, fontweight=weight, fontsize=ylabel_fs)
+    ax.set_title(title_text, fontweight=weight, pad=15, fontsize=title_fs, color=colors["text"])
+    ax.set_xlabel(xlabel_text, fontweight=weight, fontsize=xlabel_fs, color=colors["text"])
+    ax.set_ylabel(ylabel_text, fontweight=weight, fontsize=ylabel_fs, color=colors["text"])
 
     handles, labels = ax.get_legend_handles_labels()
     entries = [(h, l) for h, l in zip(handles, labels) if not l.startswith('_')]
@@ -131,6 +155,26 @@ def _apply_plot_attrs(ctx):
     else:
         ax.legend(fontsize=leg_fs, loc=plot_attrs["leg_loc"])
 
+    legend = ax.get_legend()
+    if legend is not None:
+        legend.get_frame().set_facecolor(colors["axes"])
+        legend.get_frame().set_edgecolor(colors["grid"])
+        for text in legend.get_texts():
+            text.set_color(colors["text"])
+
+
+def apply_theme_to_canvas(ctx):
+    """Recolor the matplotlib figure/axes for the current theme even with
+    no data loaded — simple_plot() bails out early with an empty cache,
+    so an untouched canvas would otherwise stay white until a file loads."""
+    colors = mpl_colors(ctx.settings.get("theme", "light"))
+    ctx.fig.set_facecolor(colors["figure"])
+    ctx.ax.set_facecolor(colors["axes"])
+    ctx.ax.tick_params(colors=colors["text"])
+    for spine in ctx.ax.spines.values():
+        spine.set_color(colors["grid"])
+    ctx.canvas.draw_idle()
+
 
 def simple_plot(ctx, draw_now=True):
     cache = ctx.cache
@@ -149,6 +193,7 @@ def simple_plot(ctx, draw_now=True):
     prev_ylim = None if is_new_dataset else ax.get_ylim()
 
     ax.clear()
+    _apply_theme_colors(ctx)
     ax.axhline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
 
     decim_lines = []  # (line, full_x, full_y) — trace lines tracked for decimation
@@ -234,7 +279,7 @@ def simple_plot(ctx, draw_now=True):
     _apply_plot_attrs(ctx)
 
     if ctx.show_grid:
-        ax.grid(True, linestyle=':', alpha=0.4, color='gray')
+        ax.grid(True, linestyle=':', alpha=0.4, color=mpl_colors(ctx.settings.get("theme", "light"))["grid"])
 
     # Hover tracker dots — one per snappable line, drawn via blit
     ctx.tracker_dots = [
@@ -263,7 +308,7 @@ def set_grid_visibility(ctx, show):
         from .pg_engine import pg_set_grid_visibility
         pg_set_grid_visibility(ctx)
         return
-    ctx.ax.grid(ctx.show_grid, linestyle=':', alpha=0.4, color='gray')
+    ctx.ax.grid(ctx.show_grid, linestyle=':', alpha=0.4, color=mpl_colors(ctx.settings.get("theme", "light"))["grid"])
     ctx.canvas.draw_idle()
 
 

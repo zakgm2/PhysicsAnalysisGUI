@@ -2,7 +2,7 @@
 attributes.py
 -------------
 Edit Attributes dialog: title/label text and font sizes, legend font
-size/position, and per-legend-entry show/hide + rename.
+size/position, per-legend-entry show/hide + rename, and grid visibility.
 """
 
 from PyQt6.QtWidgets import (
@@ -41,6 +41,9 @@ class AttributesDialog(QDialog):
         self.cb_bold = QCheckBox("Bold")
         self.cb_bold.setChecked(plot_attrs.get("bold", True))
         grid.addWidget(self.cb_bold, 3, 0, 1, 2)
+        self.cb_grid = QCheckBox("Show Grid")
+        self.cb_grid.setChecked(ctx.show_grid)
+        grid.addWidget(self.cb_grid, 3, 2, 1, 2)
         layout.addWidget(lf)
 
         # Legend
@@ -134,6 +137,8 @@ class AttributesDialog(QDialog):
                 (orig_l, le.text() or orig_l, cb.isChecked())
                 for cb, le, orig_l in self.entry_widgets
             ]
+
+        plotting.set_grid_visibility(ctx, self.cb_grid.isChecked())
 
         if ctx.settings.get("plot_engine") == "pyqtgraph":
             plotting.simple_plot(ctx)  # pg has no incremental "apply", full rebuild
