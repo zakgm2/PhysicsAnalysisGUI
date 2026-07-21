@@ -2,6 +2,12 @@
 
 ---
 
+## v2.7.0
+**New: Debounce presses in Add Marker**
+- Add Marker's auto-detected-store panel gained a "Debounce presses within ___ s of each other" checkbox (default 0.15s), next to the existing High/Low phase checkboxes — for rigs where a lever occasionally registers more than one contact for a single physical press (switch bounce/double-tap), regardless of the FR schedule (FR1, FR3, ...) in use. When checked, onset/offset markers are grouped per store+phase and filtered with PhysicsLibrary 1.8.0's new `debounce_events()` before being added to the plot; the success toast reports how many duplicates were dropped. Grouped per store+phase so a fast event in one store never suppresses an unrelated one in another, and Note-style markers (free-text annotations, no onset/offset phase) are never touched by it.
+
+---
+
 ## v2.6.0
 **New: Splice Recording**
 - New left-side icon sidebar (📍 Add Marker, ✂ Splice, 💾 Save Changes, ↺ Undo All Changes), collapsible via a small arrow handle — tools that change how the data looks/is analyzed without ever touching the original raw data, moved out of the top toolbar rather than duplicated.

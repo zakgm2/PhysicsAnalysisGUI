@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
+import PhysicsLibrary as pl
+
 from .context import _MARKER_COLORS
 from .marker_labels import store_display_name
 from .toasts import show_error, show_success, show_window_toast
@@ -279,6 +281,21 @@ class AddMarkerDialog(QDialog):
             self.chk_low.setChecked(False)
             l1.addWidget(self.chk_low)
 
+            # Switch bounce / double-tap duplicates land within
+            # milliseconds of the real press — far closer than an animal
+            # can genuinely press again, regardless of FR schedule. Off by
+            # default since not every store is a lever (a pump/light epoc
+            # shouldn't have "presses" collapsed).
+            debounce_row = QHBoxLayout()
+            self.chk_debounce = QCheckBox("Debounce presses within")
+            debounce_row.addWidget(self.chk_debounce)
+            self.e_min_isi = QLineEdit("0.15")
+            self.e_min_isi.setFixedWidth(50)
+            debounce_row.addWidget(self.e_min_isi)
+            debounce_row.addWidget(QLabel("s of each other"))
+            debounce_row.addStretch(1)
+            l1.addLayout(debounce_row)
+
             store_btn_row = QHBoxLayout()
             btn_add_selected = QPushButton("Add Selected")
             btn_add_selected.clicked.connect(self._add_selected_stores)
@@ -465,12 +482,53 @@ class AddMarkerDialog(QDialog):
         detected = self.ctx.cache.get('detected_markers', [])
         to_add = [dict(m) for m in detected
                   if m.get('store') in selected_stores and self._phase_allowed(m)]
+
+        debounced_out = 0
+        if self.chk_debounce.isChecked():
+            try:
+                min_isi = max(0.0, float(self.e_min_isi.text()))
+            except ValueError:
+                min_isi = 0.15
+            before = len(to_add)
+            to_add = self._debounce_markers(to_add, min_isi)
+            debounced_out = before - len(to_add)
+
         self.ctx.cache['markers'].extend(to_add)
         from .plotting import simple_plot
         simple_plot(self.ctx)
-        show_success(self.ctx, f"Added {len(to_add)} marker(s) from "
-                                f"{len(selected_stores)} store(s)")
+        msg = f"Added {len(to_add)} marker(s) from {len(selected_stores)} store(s)"
+        if debounced_out:
+            msg += f" ({debounced_out} bounce duplicate(s) dropped)"
+        show_success(self.ctx, msg)
         self.accept()
+
+    def _debounce_markers(self, markers, min_isi):
+        """Drop switch-bounce/duplicate presses within min_isi seconds of
+        the previous kept event, per (store, phase) group so a fast press
+        in one store never suppresses an unrelated event in another.
+        Note-style markers (phase is None — free-text annotations, not a
+        state's onset/offset edge) are passed through untouched."""
+        groups = {}
+        passthrough = []
+        for m in markers:
+            phase = m.get('phase')
+            if phase is None:
+                passthrough.append(m)
+                continue
+            groups.setdefault((m.get('store'), phase), []).append(m)
+
+        result = list(passthrough)
+        for group in groups.values():
+            group.sort(key=lambda m: m['time'])
+            kept_times = pl.debounce_events([m['time'] for m in group], min_isi)
+            gi = 0
+            for kt in kept_times:
+                while group[gi]['time'] != kt:
+                    gi += 1
+                result.append(group[gi])
+                gi += 1
+        result.sort(key=lambda m: m['time'])
+        return result
 
     def _remove_selected_stores(self):
         renamed = self._flush_pending_rename()
