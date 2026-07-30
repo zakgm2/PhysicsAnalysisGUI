@@ -115,3 +115,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 | 1.1.0 | Generic file parser, Excel support, blit hover, curve fit export, marker editing |
 | 1.0.0 | Full GUI with TDT and Oxysoft support |
 | 0.1.0 | Initial file parser and plotting prototype |
+
+## License
+
+MIT — see [LICENSE](LICENSE) for details.
