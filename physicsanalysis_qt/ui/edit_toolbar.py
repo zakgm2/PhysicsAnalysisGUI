@@ -10,13 +10,16 @@ external image assets needed) in a fixed-width vertical strip,
 collapsible via a small arrow handle so it doesn't have to stay in view.
 """
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox, QMenu
 from PyQt6.QtGui import QFont
 
 from ..interaction import reset_zoom
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers, clear_json_saves
-from ..analysis.splice import restore_full_recording, is_spliced, save_splice
+from ..analysis.splice import (
+    restore_full_recording, is_spliced, save_splice, open_splice_manager, start_splice_flow,
+)
 
 _ICON_SIZE = 44
 _HANDLE_WIDTH = 18
@@ -30,19 +33,31 @@ def _icon_button(glyph, tooltip):
     return btn
 
 
-def _on_splice_clicked(ctx, btn):
-    if is_spliced(ctx):
-        restore_full_recording(ctx)
-        btn.setToolTip("Restore Full Recording — undo the active splice")
-        btn.setStyleSheet("background-color: #FFD54F;")
-        return
+def _on_splice_clicked(ctx):
+    # Always starts another splice — splices stack (e.g. removing more
+    # than one artifact from the same recording) instead of each new one
+    # restarting from the pristine original. Calls start_splice_flow
+    # directly (rather than routing through plot_type_combo) so every
+    # click reopens the mode picker — setCurrentText("Splice") only
+    # fired the combo's changed signal the first time, since re-setting
+    # a combo to the value it's already showing is a no-op change-wise.
+    # Right-click this icon to review/remove what's already applied, or
+    # restore everything.
+    start_splice_flow(ctx)
 
-    # Same path as picking "Splice" from the plot-type combo — asks the
-    # mode first, then hands control to the plot for two clicks.
-    ctx.plot_type_combo.setCurrentText("Splice")
-    btn.setToolTip("Splice Recording — work on a copy of a chosen time range, "
-                    "original stays untouched")
-    btn.setStyleSheet("")
+
+def _on_splice_right_clicked(ctx, btn, pos):
+    menu = QMenu(ctx.win)
+    n = len(ctx._active_splices)
+    act_manage = menu.addAction(f"Manage Splices… ({n} active)" if n else "No splices active")
+    act_manage.setEnabled(n > 0)
+    act_restore = menu.addAction("Restore Full Recording")
+    act_restore.setEnabled(is_spliced(ctx))
+    chosen = menu.exec(btn.mapToGlobal(pos))
+    if chosen == act_manage:
+        open_splice_manager(ctx)
+    elif chosen == act_restore:
+        restore_full_recording(ctx)
 
 
 def _on_undo_all_clicked(ctx):
@@ -102,8 +117,12 @@ def build_edit_toolbar(ctx):
 
     btn_splice = _icon_button(
         "✂", "Splice Recording — work on a copy of a chosen time range, "
-             "original stays untouched")
-    btn_splice.clicked.connect(lambda: _on_splice_clicked(ctx, btn_splice))
+             "original stays untouched. Splices stack; right-click to "
+             "review/remove one or restore everything.")
+    btn_splice.clicked.connect(lambda: _on_splice_clicked(ctx))
+    btn_splice.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+    btn_splice.customContextMenuRequested.connect(
+        lambda pos: _on_splice_right_clicked(ctx, btn_splice, pos))
     content_layout.addWidget(btn_splice)
 
     btn_save_changes = _icon_button(

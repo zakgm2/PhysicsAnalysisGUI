@@ -106,6 +106,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.9.0 | Loading screen with a GitHub update check, `Launch PhysicsAnalysis.lnk` desktop launcher, splice stacking with a manager dialog, per-note Add Marker grouping, RANSAC inlier-fraction toast, Tick epoc excluded from markers/analysis |
 | 2.8.0 | Plot signal selector for TDT (Normalized/Isosbestic/Main Driver), Event PETH per-trial include/exclude, Rescale moved to icon sidebar, RANSAC-robust motion correction, zoom-state and PyQtGraph flicker fixes |
 | 2.7.0 | Debounce presses in Add Marker (switch-bounce/double-tap duplicate press filtering) |
 | 2.6.0 | Splice Recording, left icon sidebar, PETH/Peak Finder improvements |

@@ -224,3 +224,5 @@ __marimo__/
 *.png
 *.pdf
 *.svg
+# ...except real source assets (app icon/logo etc.), not exported figures
+!physicsanalysis_qt/assets/*.png

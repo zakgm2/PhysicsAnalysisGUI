@@ -19,6 +19,23 @@ from .toasts import show_error, show_window_toast
 
 _DECIMATE_MAX_POINTS_DEFAULT = 2000  # fallback if no ctx is available
 
+_FULL_VIEW_PADDING_FRAC = 0.02  # 2% of the data span on each side
+
+
+def padded_xlim(x):
+    """(lo, hi) for "fit the full trace with a little breathing room" —
+    matplotlib's set_xlim() has no built-in padding (unlike its own
+    autoscale(), and unlike PyQtGraph's autoRange(), both of which already
+    add a small default margin), so an exact-bounds set_xlim() leaves the
+    trace flush against the axes edges. Used for every "show everything"
+    moment (a fresh load/signal switch, and the Rescale button) so they
+    all look the same."""
+    lo, hi = float(x[0]), float(x[-1])
+    pad = (hi - lo) * _FULL_VIEW_PADDING_FRAC
+    if pad == 0:
+        pad = 1.0  # degenerate single-point/flat data — avoid a zero-width range
+    return lo - pad, hi + pad
+
 
 def _min_max_decimate(x, y, xlim, max_points=_DECIMATE_MAX_POINTS_DEFAULT):
     """
@@ -269,7 +286,7 @@ def simple_plot(ctx, draw_now=True):
     ax.set_ylabel(y_label, fontweight='bold')
     ax.legend(loc='upper left', fontsize=ctx.plot_attrs["leg_fs"])
     if is_new_dataset:
-        ax.set_xlim(cache['x'][0], cache['x'][-1])
+        ax.set_xlim(*padded_xlim(cache['x']))
         ctx._last_zoomed_key = zoom_key
     else:
         ax.set_xlim(prev_xlim)

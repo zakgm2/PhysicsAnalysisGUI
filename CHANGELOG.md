@@ -2,6 +2,32 @@
 
 ---
 
+## v2.9.0
+**New: Loading screen**
+- A small frameless, rounded splash screen (`physicsanalysis_qt/splash.py`) now shows immediately on launch — the app's logo (`physicsanalysis_qt/assets/icon.png`) with a gentle pulse and a status line, closing once the main window is ready. Stays up at least ~3s even if setup finishes faster (this app's startup usually does), so it's actually visible instead of flashing past before it registers. Also now used as the app/taskbar window icon, and as the icon for the new `Launch PhysicsAnalysis.lnk` desktop shortcut (`physicsanalysis_qt/assets/icon.ico`).
+- Checks GitHub for a newer PhysicsAnalysis release while the splash is up (`physicsanalysis_qt/update_check.py`) — a quiet "Update available: vX.Y.Z" status if one exists, silent otherwise (no releases published yet, offline, GitHub unreachable — none of those are worth interrupting startup over). Runs on a background thread with a 5s cap so a slow/absent network never holds up launch. Checks this repo only, not PhysicsLibrary — that's developed locally alongside this app and would never match whatever's published.
+
+**New: Splices stack, with a manager to review/remove them**
+- Splice Recording no longer restarts from the pristine original every time — each new splice now applies on top of whatever's currently shown, so removing several separate artifacts from the same recording no longer means the second attempt undoes the first. Left-click the sidebar's scissors icon to add another splice at any time; right-click it for a **Manage Splices** list showing every splice currently applied (in order), each individually removable, plus a one-click **Restore Full Recording**. Removing one from the middle replays the rest from the original in order — the same tradeoff any sequential edit/undo stack has: removing an earlier step can shift what a later step's saved range lines up with. `JSON saves/splice.json` now stores the whole list (old single-splice files still load fine).
+
+**New: `Launch PhysicsAnalysis.lnk`**
+- A proper double-click launcher (repo root) that runs the app via `pyw.exe` directly — no console window ever appears, and it doesn't depend on however (or whether) `.pyw` happens to be file-associated in Explorer. Copy/pin it wherever's convenient; its target and working directory are absolute, so it works from any location.
+
+**Changed**
+- Motion correction now uses PhysicsLibrary 1.10.0's corrected noise-estimate formula for RANSAC's residual threshold (fixed in 1.9.1 — see that changelog for why) and skips the 'Tick' epoc store entirely when building marker/event lists — it's TDT's own 1-second heartbeat signal, not a real event, and previously cluttered every marker and Event PETH picker.
+- A toast now reports what fraction of samples RANSAC kept as inliers right after a TDT folder loads (only shown when a 415 reference stream exists, since that's when motion correction actually runs) — visibility into how much of the recording was judged to be motion artifact and excluded from the fit, via PhysicsLibrary 1.10.0's new `motion_correction_inlier_fraction`.
+
+**Fixed**
+- PyQtGraph engine: Splice mode's click-to-anchor-two-points never actually did anything — the click dispatch (`pg_interaction.py`) only ever handled Curve Fit clicks; Splice's handling existed only in the matplotlib engine's `interaction.py`. Splicing now works identically on both engines.
+- Event PETH's heatmap Y-axis ("Trial") could show fractional tick labels (e.g. 2.5) for small trial counts — trial rows are a count, not a continuous quantity. Forced to integer-only ticks.
+- Rescale (and every "show everything" moment — a fresh load or a Plot signal switch) fit the matplotlib view exactly to the data's bounds with zero margin, leaving the trace flush against the plot edges. PyQtGraph's `autoRange()` already adds a small default margin; matplotlib's `set_xlim()` doesn't, so it needed an explicit ~2% padding to match.
+- Loading screen could still flash past almost instantly despite the 3s floor: its wait loop polled `processEvents()`+`sleep()`, which isn't reliable for keeping a window actually composited on screen, and nothing forced a first paint before the (event-loop-free) main-window construction took over the thread. Swapped the wait for a real nested `QEventLoop` and added an explicit paint pump right after `show()`.
+- Loading screen could render as a bare outline with no logo/text visible at all — `WA_TranslucentBackground` combined with the `SplashScreen` window flag is flaky on Windows (DWM sometimes never composites it). Switched the rounded corners to a plain window mask instead, which doesn't depend on real alpha compositing.
+- Add Marker's "Add/Remove Auto-Detected Markers" list showed exactly one "Note" entry no matter how many distinct manually-entered notes (Clap, Sucrose, ...) the recording actually had, since every note shares the same underlying TDT store name — grouping now uses each note's own text for Note-style markers (matching how renaming/bulk-delete already treated them elsewhere), so every distinct note gets its own checkbox. Right-click renaming stays store-only, since a note's displayed text isn't a store name to begin with.
+- Clicking the sidebar's scissors icon a second time in a row (without switching to another analysis mode first) silently did nothing instead of reopening the splice mode picker — it worked by setting the Analysis dropdown's text to "Splice", which only fires a change event the *first* time (re-setting a combo to the value it's already showing isn't a change). Splice-mode tracking no longer goes through that dropdown at all: "Splice" is removed from it entirely (it was never meant to be picked from there once the scissors icon existed) and a dedicated `ctx.splice_click_mode` flag drives both engines' click capture, so the scissors icon reopens the mode picker on every click.
+
+---
+
 ## v2.8.0
 **New: Plot options for TDT (Normalized / Isosbestic / Main Driver)**
 - A new "Plot:" dropdown appears in the toolbar whenever a TDT recording is loaded, letting you choose what the main plot (and every TDT analysis tool — FFT, Z-Score PETH, Event PETH, Peak Finder, Curve Fit) actually shows: **Normalized (dF/F)** (the motion-corrected, bleach-corrected trace — what was always plotted before), **Isosbestic** (the raw 415-type reference channel, only shown if the recording has one), or **Main Driver** (the raw 465-type probe channel). Switching it re-renders immediately in both the matplotlib and PyQtGraph engines.

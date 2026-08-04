@@ -87,7 +87,7 @@ def _load_folder(ctx, folder_path):
         # carry over — Open (unlike Reload, which already clears this)
         # can load an entirely different folder.
         ctx.original_cache = None
-        ctx._active_splice = None
+        ctx._active_splices = []
         ctx._data_generation += 1
         ctx.cache = {
             'source':      'TDT',
@@ -107,6 +107,11 @@ def _load_folder(ctx, folder_path):
         refresh_plot_signal_options(ctx)
         simple_plot(ctx)
         show_success(ctx, f"Folder: {ctx.cache['store']}")
+        inlier_fraction = result.get('motion_correction_inlier_fraction')
+        if inlier_fraction is not None:
+            show_window_toast(
+                ctx, f"RANSAC motion correction kept {inlier_fraction * 100:.0f}% "
+                     "of samples as inliers")
 
     def _on_error(msg):
         show_error(ctx, msg)

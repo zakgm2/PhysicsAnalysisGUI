@@ -112,13 +112,25 @@ class AppState:
         # Recording is used, so Restore Full Recording can bring it back
         # without re-loading from disk. None when no splice is active.
         self.original_cache = None
-        # {"mode": ..., "start": ..., "end": ...} for the currently active
-        # splice, if any — what save_splice() (analysis/splice.py) writes
-        # to the JSON saves/ sidecar. None when no splice is active.
-        self._active_splice = None
+        # List of {"mode": ..., "start": ..., "end": ...}, one per splice
+        # currently applied, in the order they were applied — several can
+        # stack (e.g. removing more than one artifact from the same
+        # recording). What save_splice() (analysis/splice.py) writes to
+        # the JSON saves/ sidecar. Empty when no splice is active.
+        self._active_splices = []
         # Set by analysis/splice.py's start_splice_flow() while the user
         # is choosing what kind of splice, read by apply_splice_at_points().
         self._pending_splice_mode = None
+        # True from a successful start_splice_flow() until the two clicks
+        # it's waiting for are both in (apply_splice_at_points) — the
+        # click handlers (interaction.py, pg_interaction.py) check this
+        # directly rather than plot_type_combo.currentText() == "Splice",
+        # since "Splice" isn't a combo entry (only the sidebar's scissors
+        # icon starts a splice) and, previously, re-setting the combo to
+        # a value it was already showing didn't fire currentTextChanged —
+        # which meant clicking the scissors a second time in a row did
+        # nothing.
+        self.splice_click_mode = False
         self.selected_path = None
         self.last_dir = None  # last folder browsed in any Open dialog
         # Which entry of cache['signals'] the main plot (and every

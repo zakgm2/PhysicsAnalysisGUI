@@ -109,6 +109,21 @@ def on_pg_mouse_clicked(ctx, ev):
         if len(ctx.slope_clicks) == 2:
             launch_curve_fit(ctx, None, ctx.slope_clicks[0], ctx.slope_clicks[1])
             ctx.slope_clicks.clear()
+        return
+
+    if ctx.splice_click_mode and ev.button() == Qt.MouseButton.LeftButton:
+        # Never wired up for this engine — only interaction.py (matplotlib)
+        # had the click-to-anchor handling, so Splice mode silently did
+        # nothing here. No line-snapping needed (unlike Curve Fit above):
+        # a splice range is a time boundary, not tied to a signal's value.
+        from .analysis.splice import apply_splice_at_points
+
+        ctx.slope_clicks.append(x)
+        show_window_toast(ctx, f"Point {len(ctx.slope_clicks)}: {x:.2f}s")
+        if len(ctx.slope_clicks) == 2:
+            t1, t2 = ctx.slope_clicks
+            ctx.slope_clicks.clear()
+            apply_splice_at_points(ctx, t1, t2)
 
 
 def _right_click_marker_menu(ctx, xdata, global_pos):
