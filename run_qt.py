@@ -23,7 +23,7 @@ from physicsanalysis_qt.plotting import apply_theme_to_canvas
 from physicsanalysis_qt.splash import SplashScreen, app_icon
 from physicsanalysis_qt.theme import apply_theme
 from physicsanalysis_qt.ui.main_window import build_main_window
-from physicsanalysis_qt.update_check import UpdateCheckWorker
+from physicsanalysis_qt.update_check import UpdateCheckWorker, show_update_required_dialog
 
 
 def main():
@@ -43,12 +43,24 @@ def main():
 
     splash.set_status("Checking for updates...")
     update_worker = UpdateCheckWorker()
-    update_worker.checked.connect(lambda msg: splash.set_status(msg) if msg else None)
+    update_result = {}
+    update_worker.checked.connect(update_result.update)
     wait_loop = QEventLoop()
     update_worker.checked.connect(wait_loop.quit)
     QTimer.singleShot(5000, wait_loop.quit)  # don't hold up startup if GitHub is slow/unreachable
     update_worker.start()
     wait_loop.exec()
+
+    # A PhysicsAnalysis update blocks launch entirely — the app never
+    # gets built, just a dialog pointing at where to download the new
+    # version. A PhysicsLibrary update (or "up to date", or nothing
+    # found at all) is only ever a quiet splash status line below.
+    if update_result.get("block"):
+        splash.close()
+        show_update_required_dialog(update_result["message"], update_result["url"])
+        return
+    if update_result.get("status"):
+        splash.set_status(update_result["status"])
     ctx._update_check_worker = update_worker  # keeps it alive if it's still running past the timeout
 
     splash.set_status("Building interface...")

@@ -2,6 +2,13 @@
 
 ---
 
+## v2.10.0
+**Changed: Update check now blocks launch for a stale app, checks PhysicsLibrary too**
+- An available PhysicsAnalysis update now refuses to launch the app at all — instead of building the main window, it shows a dialog with the new version number and a link to download it (an "Open Download Page" button, plus the raw URL as text). A PhysicsLibrary update stays a quiet, non-blocking splash status line, since that's developed locally alongside this app and drifting ahead of what's pushed to GitHub is an expected mid-work state, not something to block launch over.
+- "Latest version" for either project now prefers the tag of its latest published GitHub Release when one exists, falling back to the version committed in `pyproject.toml` on the default branch when it doesn't (neither project reliably uses Releases). Checked via `physicsanalysis_qt/update_check.py`'s `UpdateCheckWorker`, still on a background thread with a 5s cap so a slow/absent network never holds up launch.
+
+---
+
 ## v2.9.0
 **New: Loading screen**
 - A small frameless, rounded splash screen (`physicsanalysis_qt/splash.py`) now shows immediately on launch — the app's logo (`physicsanalysis_qt/assets/icon.png`) with a gentle pulse and a status line, closing once the main window is ready. Stays up at least ~3s even if setup finishes faster (this app's startup usually does), so it's actually visible instead of flashing past before it registers. Also now used as the app/taskbar window icon, and as the icon for the new `Launch PhysicsAnalysis.lnk` desktop shortcut (`physicsanalysis_qt/assets/icon.ico`).
