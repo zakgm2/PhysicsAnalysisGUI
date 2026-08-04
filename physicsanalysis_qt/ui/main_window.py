@@ -57,11 +57,20 @@ class _PlotStack(QStackedWidget):
         self._timer.start(150)
 
     def _replot(self):
-        from ..pg_engine import pg_simple_plot
+        # Not a full pg_simple_plot() — this settle-tick only exists to
+        # get an accurate (reprobe=True) margin/font pass once the drag
+        # stops; pg_refresh_fonts already does that without touching line
+        # data, markers, or view range. A full rebuild here was pure
+        # overkill for that and paid for it with a one-frame flash on
+        # every resize settle, including the layout reflow a fresh TDT
+        # load triggers by revealing the Plot dropdown for the first time
+        # — same class of bug pg_set_grid_visibility's docstring already
+        # covers for grid toggles.
         ctx = self._ctx
-        sync_pg_margins(ctx, reprobe=True)
         if ctx.settings.get("plot_engine") == "pyqtgraph":
-            pg_simple_plot(ctx)
+            from ..pg_engine import pg_refresh_fonts
+            pg_refresh_fonts(ctx)
+        sync_pg_margins(ctx, reprobe=True)
 
 
 def build_main_window(ctx):

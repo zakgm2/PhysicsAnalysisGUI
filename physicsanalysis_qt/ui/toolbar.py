@@ -17,8 +17,8 @@ from ..loaders.oxysoft import open_file, reload_file
 from ..loaders.generic import launch_generic_file_loader, reload_generic
 from ..loaders.pt2 import launch_pt2_viewer
 from ..loaders.text_field_study import open_field_study_folder
-from ..interaction import reset_zoom
 from ..plotting import export_canvas_action
+from ..plot_signal import build_plot_signal_control
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
@@ -128,6 +128,8 @@ def build_toolbar(ctx):
     ctx.plot_type_combo.currentTextChanged.connect(lambda text: _on_plot_mode_changed(ctx, text))
     layout.addWidget(ctx.plot_type_combo)
 
+    layout.addWidget(build_plot_signal_control(ctx))
+
     init_window_settings(ctx)
     ctx.btn_window = QPushButton(_window_button_text(ctx))
     ctx.btn_window.clicked.connect(lambda: open_window_dialog(ctx))
@@ -140,10 +142,6 @@ def build_toolbar(ctx):
     layout.addWidget(btn_intervals)
 
     layout.addWidget(QLabel("|"))
-
-    btn_reset_zoom = QPushButton("Reset Zoom")
-    btn_reset_zoom.clicked.connect(lambda: reset_zoom(ctx))
-    layout.addWidget(btn_reset_zoom)
 
     btn_export_view = QPushButton("Export View (PNG/PDF)")
     btn_export_view.clicked.connect(lambda: export_canvas_action(ctx))

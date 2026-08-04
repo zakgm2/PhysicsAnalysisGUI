@@ -121,7 +121,16 @@ class AppState:
         self._pending_splice_mode = None
         self.selected_path = None
         self.last_dir = None  # last folder browsed in any Open dialog
-        self.show_corrected = True
+        # Which entry of cache['signals'] the main plot (and every
+        # TDT-only analysis dialog) currently shows — e.g. "normalized",
+        # "isosbestic", "main_driver". Only meaningful for a cache that
+        # actually has a 'signals' map; see get_active_signal() below.
+        # Reset to "normalized" on every fresh load (loaders/tdt.py) so a
+        # previous dataset's selection (e.g. "isosbestic") never silently
+        # carries over to one that doesn't have that channel.
+        self.plot_signal = "normalized"
+        self.plot_signal_row = None     # QWidget row wrapping the combo below
+        self.plot_signal_combo = None   # toolbar "Plot:" dropdown, see plot_signal.py
         self.show_grid = True
         self.plot_attrs = default_plot_attrs()
 
@@ -134,14 +143,27 @@ class AppState:
         self.study_data_path = None
         self.study_data_config = None  # the field_study_config.py dict used for this load
 
-        # (engine, id(cache)) the view was last reset-to-fit for. Redraws
+        # (engine, generation) the view was last reset-to-fit for. Redraws
         # triggered by things that aren't a fresh data load (grid toggle,
-        # marker add/edit, attribute changes) compare against this so they
-        # can preserve the current zoom/pan instead of snapping back to the
-        # full-data view every time — an actual new dataset OR switching
-        # engines (the other engine's view never had valid data in it)
-        # resets it.
+        # marker add/edit, attribute changes, switching the Plot signal
+        # dropdown) compare against this so they can preserve the current
+        # zoom/pan instead of snapping back to the full-data view every
+        # time — an actual new dataset OR switching engines (the other
+        # engine's view never had valid data in it) resets it.
+        #
+        # Uses an explicit counter (below), not id(cache): a freed cache
+        # dict's memory address can be reused by the very next dict CPython
+        # allocates (same size/shape, back-to-back Open/Reload), which
+        # would make id(new_cache) == id(old_cache) by pure coincidence —
+        # silently treating a brand new recording as "unchanged" and
+        # snapping the view to whatever was zoomed in the previous one.
         self._last_zoomed_key = None
+        # Bumped exactly once every time ctx.cache is replaced with a
+        # genuinely new dataset (Open/Reload, splice apply, restore full
+        # recording) — never for an in-place redraw of the same dataset
+        # (e.g. switching the Plot signal dropdown, which must NOT reset
+        # the zoom). See _last_zoomed_key above.
+        self._data_generation = 0
 
         # Marker mode
         self.marker_mode = False
@@ -196,3 +218,34 @@ class AppState:
         # Background loading (Options: "Load data files on a background thread")
         self._bg_thread = None
         self._bg_worker = None
+
+
+def get_active_signal(ctx):
+    """Resolve which signal the main plot (and every TDT-only analysis
+    dialog — FFT, Z-Score PETH, Event PETH, Peak Finder) should currently
+    use, as (key, label, y, color).
+
+    cache['signals'] is a dict built by the loader (see loaders/tdt.py)
+    mapping a plot-option key ("normalized", "isosbestic", "main_driver",
+    ...) to {"label", "y", "color"} — deliberately not hardcoded to
+    exactly those three: a recording with no isosbestic reference stream
+    just won't have that key, and this still works. Sources that don't
+    offer more than one plottable signal (Oxysoft, Generic — they already
+    plot every channel at once) have no 'signals' map at all, so this
+    falls back to the cache's default normalized trace directly.
+    """
+    cache = ctx.cache
+    signals = cache.get('signals')
+    if not signals:
+        y = cache['corr'] if 'corr' in cache else cache['raw']
+        return "normalized", "dF/F (corrected)", y, 'blue'
+    key = ctx.plot_signal if ctx.plot_signal in signals else next(iter(signals))
+    sig = signals[key]
+    return key, sig['label'], sig['y'], sig['color']
+
+
+def signal_short_label(key):
+    """"main_driver" -> "Main Driver" — a compact form of an active-signal
+    key for dialog titles/export filenames, where the full descriptive
+    label (e.g. "Isosbestic (415A)") would be redundant/unwieldy."""
+    return key.replace('_', ' ').title()

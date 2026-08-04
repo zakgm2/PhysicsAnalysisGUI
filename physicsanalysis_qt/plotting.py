@@ -12,6 +12,7 @@ import numpy as np
 import matplotlib.transforms as transforms
 from PyQt6.QtWidgets import QFileDialog
 
+from .context import get_active_signal
 from .fonts import main_plot_scale
 from .theme import mpl_colors
 from .toasts import show_error, show_window_toast
@@ -187,7 +188,7 @@ def simple_plot(ctx, draw_now=True):
         return
 
     ax = ctx.ax
-    zoom_key = ("matplotlib", id(cache))
+    zoom_key = ("matplotlib", ctx._data_generation)
     is_new_dataset = zoom_key != ctx._last_zoomed_key
     prev_xlim = None if is_new_dataset else ax.get_xlim()
     prev_ylim = None if is_new_dataset else ax.get_ylim()
@@ -241,9 +242,7 @@ def simple_plot(ctx, draw_now=True):
         x_label = cache.get('x_label', 'X')
         n_snap_lines = len(cache['y_columns'])
     else:
-        data_to_plot = cache['corr'] if ctx.show_corrected else cache['raw']
-        color_choice = 'blue' if ctx.show_corrected else 'gray'
-        label_text = 'dF/F (corrected)' if ctx.show_corrected else 'Raw signal'
+        _, label_text, data_to_plot, color_choice = get_active_signal(ctx)
         ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
         ln, = ax.plot(cache['x'], data_to_plot, color=color_choice,
                        lw=1.5, alpha=0.8, label=label_text)

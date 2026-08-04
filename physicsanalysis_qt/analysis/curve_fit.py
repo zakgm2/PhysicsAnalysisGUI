@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
 
 import PhysicsLibrary as pl
 
+from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_error, show_window_toast
 from .dispatch import get_window, export_figure_to_file
@@ -62,7 +63,15 @@ class CurveFitDialog(QDialog):
                     'y': cache['thb'].mean(axis=0) if cache['thb'].ndim > 1 else cache['thb'],
                     'color': '#228B22',
                 }
+        elif 'signals' in cache:
+            # TDT: fit whichever signal the Plot dropdown currently shows
+            # (Normalized/Isosbestic/Main Driver/...), same as the main
+            # plot and every other TDT analysis dialog.
+            _, label, y, color = get_active_signal(ctx)
+            self.raw_channel_data[label] = {'y': y, 'color': color}
         else:
+            # Generic source: no 'signals' map, just whatever single
+            # column-derived array this cache carries.
             sig = cache.get('corr', cache.get('raw'))
             lbl = 'dF/F (corrected)' if 'corr' in cache else 'Raw signal'
             self.raw_channel_data[lbl] = {'y': sig, 'color': '#2196F3'}

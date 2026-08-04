@@ -2,6 +2,28 @@
 
 ---
 
+## v2.8.0
+**New: Plot options for TDT (Normalized / Isosbestic / Main Driver)**
+- A new "Plot:" dropdown appears in the toolbar whenever a TDT recording is loaded, letting you choose what the main plot (and every TDT analysis tool — FFT, Z-Score PETH, Event PETH, Peak Finder, Curve Fit) actually shows: **Normalized (dF/F)** (the motion-corrected, bleach-corrected trace — what was always plotted before), **Isosbestic** (the raw 415-type reference channel, only shown if the recording has one), or **Main Driver** (the raw 465-type probe channel). Switching it re-renders immediately in both the matplotlib and PyQtGraph engines.
+- Not hardcoded to exactly those three or to "465"/"415" — the options are built from whatever PhysicsLibrary 1.9.0's `process_tdt_folder()` actually found in the recording, so a block missing an isosbestic reference stream just shows Normalized + Main Driver, and the dropdown is hidden entirely for Oxysoft/Generic loads (which already show every channel at once). Replaces the old `show_corrected` raw/corrected toggle, which had no wired-up UI control and was effectively dead code.
+- Splice Recording now trims/cuts these raw channels along with everything else, so picking Isosbestic or Main Driver still lines up correctly after a splice instead of showing stale, wrong-length data (PhysicsLibrary 1.9.0's `extra_channels` support).
+
+**New: Per-trial include/exclude in Event PETH**
+- Event PETH's results window now has a "Trials" checklist on the right — every trial starts checked, uncheck any to drop it from the heatmap and the mean/SEM trace (recomputed live from just the checked trials), with "All"/"None" buttons for quickly toggling the whole set. No automatic std/threshold-based rejection — this is a manual look-and-decide tool for dropping a trial that's obviously contaminated (movement, a marker that fired on a false trigger) without changing the event or window. The checklist rebuilds fresh (all checked) every time the event or window changes, since a checkbox tied to a row index wouldn't mean anything for a different trial count.
+
+**New: Rescale moved to the icon sidebar**
+- "Reset Zoom" is renamed "Rescale" and moved out of the top toolbar into the left icon sidebar, alongside Add Marker/Splice/Save/Undo.
+
+**Changed**
+- Motion correction now uses PhysicsLibrary 1.9.0's RANSAC robust regression instead of ordinary least squares — see that changelog for why. Affects dF/F values for any TDT recording with an isosbestic stream.
+
+**Fixed**
+- The view's "is this a new dataset or the same one redrawn" check used `id(cache)` — a freed cache dict's memory address can be reused by the very next same-shaped dict CPython allocates, which could make a brand new recording get silently treated as unchanged and snap to whatever zoom was active on the previous one. Replaced with an explicit generation counter bumped only on a genuine new load/splice/restore.
+- Switching the Plot signal dropdown now always fits to the newly selected signal's full range instead of trying to carry over whatever pan/zoom was active — different signals can have wildly different scale, and there's no reason a zoom on one still makes sense on another.
+- PyQtGraph engine: switching the Plot dropdown (and the resize-settle tick after a fresh TDT load reveals it) visibly flashed for one frame — both went through a full clear()+rebuild that briefly leaves an intermediate scene state on screen before the corrected view/data lands. Switching the signal now swaps the existing line's data/color/legend/title in place instead of rebuilding, and the resize-settle tick now only does its font/margin pass (`pg_refresh_fonts`) instead of a full replot — neither has anything left to flash, since there's no intermediate "cleared" state anymore. Same fix pattern this file already used for grid toggles (`pg_set_grid_visibility`).
+
+---
+
 ## v2.7.0
 **New: Debounce presses in Add Marker**
 - Add Marker's auto-detected-store panel gained a "Debounce presses within ___ s of each other" checkbox (default 0.15s), next to the existing High/Low phase checkboxes — for rigs where a lever occasionally registers more than one contact for a single physical press (switch bounce/double-tap), regardless of the FR schedule (FR1, FR3, ...) in use. When checked, onset/offset markers are grouped per store+phase and filtered with PhysicsLibrary 1.8.0's new `debounce_events()` before being added to the plot; the success toast reports how many duplicates were dropped. Grouped per store+phase so a fast event in one store never suppresses an unrelated one in another, and Note-style markers (free-text annotations, no onset/offset phase) are never touched by it.

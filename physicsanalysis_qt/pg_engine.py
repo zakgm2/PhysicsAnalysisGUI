@@ -29,6 +29,7 @@ import pyqtgraph.exporters  # noqa: F401 — registers pg.exporters.ImageExporte
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFileDialog
 
+from .context import get_active_signal
 from .fonts import main_plot_scale
 from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
 from .toasts import show_error, show_window_toast
@@ -190,10 +191,26 @@ def pg_simple_plot(ctx):
     if cache is None or plot_item is None:
         return
 
-    zoom_key = ("pyqtgraph", id(cache))
+    zoom_key = ("pyqtgraph", ctx._data_generation)
     is_new_dataset = zoom_key != ctx._last_zoomed_key
     prev_range = None if is_new_dataset else plot_item.vb.viewRange()
 
+    # The clear()-then-rebuild below briefly leaves the ViewBox showing the
+    # *previous* view range with the new (or no) content in it, until the
+    # final autoRange()/setRange() call at the bottom corrects it — visible
+    # as a jarring zoom-in-then-back-out flash on every signal switch if
+    # Qt composites that intermediate frame. Freeze repaints for the whole
+    # rebuild so only the final, fully-correct frame ever reaches the
+    # screen — same technique sync_pg_margins() uses for its own
+    # zero-margin measurement pass, for the same reason.
+    ctx.pg_widget.setUpdatesEnabled(False)
+    try:
+        _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_range)
+    finally:
+        ctx.pg_widget.setUpdatesEnabled(True)
+
+
+def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_range):
     # While autorange is on, every single addItem() call below re-fits the
     # view to whatever's been added *so far* — with several lines plus
     # markers added one at a time, that's a rapid-fire zoom-out/zoom-in
@@ -264,9 +281,7 @@ def pg_simple_plot(ctx):
         y_label, title = "Value", cache['store']
         x_label = cache.get('x_label', 'X')
     else:
-        data_to_plot = cache['corr'] if ctx.show_corrected else cache['raw']
-        color = 'b' if ctx.show_corrected else 'gray'
-        label_text = 'dF/F (corrected)' if ctx.show_corrected else 'Raw signal'
+        _, label_text, data_to_plot, color = get_active_signal(ctx)
         _add_line(cache['x'], data_to_plot, color, 1, label_text)
         y_label, title = "Amplitude", f"{label_text} — {cache['store']}"
         x_label = "Time (s)"
@@ -317,7 +332,16 @@ def pg_simple_plot(ctx):
 
     plot_item.showGrid(x=ctx.show_grid, y=ctx.show_grid, alpha=0.3)
     if is_new_dataset:
-        plot_item.enableAutoRange()
+        # enableAutoRange() only *arms* PyQtGraph's continuous auto-fit —
+        # it doesn't compute anything synchronously, so viewRange() can
+        # still read back the placeholder [0, 1]/[0, 1] view until some
+        # later internal update actually runs it. A same-dataset redraw
+        # in between (e.g. switching the Plot signal dropdown) would then
+        # capture and lock in that placeholder as "the view to preserve"
+        # instead of the real full-recording range. autoRange() is the
+        # one-shot method that fits to content immediately, so the range
+        # is always correct by the time this function returns.
+        plot_item.vb.autoRange()
         ctx._last_zoomed_key = zoom_key
     else:
         (xr, yr) = prev_range
@@ -354,6 +378,62 @@ def pg_refresh_fonts(ctx):
     _set_legend_font_size(plot_item.legend, leg_fs)
 
 
+def pg_update_active_signal(ctx):
+    """Swap the active TDT signal's line data/color/legend/title in place
+    when only which cache['signals'] entry is shown changes (the Plot
+    dropdown) — not a clear()+rebuild through pg_simple_plot(). Same fix
+    pattern pg_set_grid_visibility already uses for grid toggles (see its
+    docstring): a full rebuild briefly shows an intermediate frame (the
+    scene right after clear(), before the new line/range are back in
+    place) that Qt can composite as a one-frame flash on every switch —
+    skipping the rebuild entirely removes the intermediate state, not
+    just how long it's visible for.
+
+    Only valid for TDT's single-line case (Oxysoft/Generic never reach
+    get_active_signal — they don't have a Plot dropdown at all); callers
+    must already know that's what this redraw is. Returns False if
+    there's no existing line yet (nothing rendered so far this session),
+    so the caller can fall back to a full pg_simple_plot().
+    """
+    cache = ctx.cache
+    plot_item = ctx.pg_plot_item
+    if cache is None or plot_item is None or not ctx.pg_lines:
+        return False
+
+    item, _, _ = ctx.pg_lines[0]
+    _, label, y, color = get_active_signal(ctx)
+
+    item.setData(cache['x'], y)
+    item.setPen(pg.mkPen(color=color, width=1))
+    ctx.pg_lines[0] = (item, cache['x'], y)
+
+    plot_attrs = ctx.plot_attrs
+    label_map = {}
+    if plot_attrs["leg_entries"]:
+        label_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
+    display_name, visible = label_map.get(label, (label, True))
+
+    legend = plot_item.legend
+    old_label = ctx._legend_entries[0] if ctx._legend_entries else None
+    if legend is not None:
+        if old_label is not None:
+            legend.removeItem(old_label)
+        if visible:
+            legend.addItem(item, display_name)
+    ctx._legend_entries = [label]
+
+    title = f"{label} — {cache['store']}"
+    ctx._last_title = title
+    title_text = plot_attrs["title"] or title
+    title_fs, _, _, _ = _scaled_font_sizes(ctx)
+    weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
+    plot_item.setTitle(title_text, size=f'{title_fs}pt', color='#000',
+                        **{'font-weight': weight})
+
+    plot_item.vb.autoRange()
+    return True
+
+
 def pg_set_grid_visibility(ctx):
     if ctx.pg_plot_item is not None:
         ctx.pg_plot_item.showGrid(x=ctx.show_grid, y=ctx.show_grid, alpha=0.3)
@@ -361,7 +441,12 @@ def pg_set_grid_visibility(ctx):
 
 def pg_reset_zoom(ctx):
     if ctx.pg_plot_item is not None:
-        ctx.pg_plot_item.enableAutoRange()
+        # .autoRange(), not enableAutoRange() — see pg_simple_plot's
+        # comment: the latter only arms a future auto-fit rather than
+        # computing one now, which is fine for a UI button today (nothing
+        # reads the range back synchronously afterward) but is the same
+        # hazard if that ever changes.
+        ctx.pg_plot_item.vb.autoRange()
 
 
 def pg_export_view(ctx):

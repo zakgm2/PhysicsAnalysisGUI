@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton
 
 import PhysicsLibrary as pl
 
+from ..context import get_active_signal, signal_short_label
 from ..fonts import fig_font_sizes
 from ..toasts import show_error, show_window_toast
 from .dispatch import export_figure_to_file, get_window
@@ -20,13 +21,13 @@ def launch_zscore_peth(ctx, center_t):
         show_error(ctx, "PETH is only available for TDT data.")
         return
     pre, post = get_window(ctx)
-    data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
+    key, _, data_source, _ = get_active_signal(ctx)
+    mode_str = signal_short_label(key)
     clean_signal = pl.smooth_signal(data_source, ctx.cache['fs'])
     slice_x, z_seg = pl.get_zscore_slice(ctx.cache['x'], clean_signal, center_t, pre=pre, post=post)
     if z_seg is None:
         return
     z_binned = pl.bin_for_heatmap(z_seg)
-    mode_str = "Corrected" if ctx.show_corrected else "Raw"
 
     dlg = QDialog(ctx.win)
     dlg.setWindowTitle(f"PETH Analysis ({mode_str}) - {center_t:.2f}s  "

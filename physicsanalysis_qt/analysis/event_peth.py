@@ -14,13 +14,16 @@ arbitrary clicked point rather than every occurrence of a named event.
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit,
+    QListWidget, QListWidgetItem, QWidget,
 )
 
 import PhysicsLibrary as pl
 
 from ..background import run_in_background
+from ..context import get_active_signal, signal_short_label
 from ..fonts import fig_font_sizes
 from ..marker_labels import marker_display_label
 from ..toasts import show_error, show_window_toast
@@ -68,8 +71,12 @@ class _EventPethResultsDialog(QDialog):
         self._colorbar = None
 
         self.setWindowTitle("Event PETH")
-        self.resize(750, 720)
-        layout = QVBoxLayout(self)
+        self.resize(940, 720)
+        outer = QHBoxLayout(self)
+
+        left = QVBoxLayout()
+        outer.addLayout(left, stretch=1)
+        layout = left
 
         top_row = QHBoxLayout()
         top_row.addWidget(QLabel("Event:"))
@@ -118,6 +125,34 @@ class _EventPethResultsDialog(QDialog):
         )
         layout.addWidget(self.btn_export)
 
+        # Right side: per-trial include/exclude checklist — no automatic
+        # rejection (std/threshold cutoffs), just a manual way to drop a
+        # trial that looks contaminated (movement, a marker that fired on
+        # a false trigger, ...) from the heatmap and mean/SEM trace without
+        # having to change the event or window. Rebuilt fresh (all checked)
+        # every time _run() computes a new trial set, since checkbox state
+        # tied to a row index wouldn't mean anything for a different event
+        # or window's trial count.
+        right = QVBoxLayout()
+        right_widget = QWidget()
+        right_widget.setLayout(right)
+        right_widget.setFixedWidth(180)
+        outer.addWidget(right_widget)
+
+        right.addWidget(QLabel("Trials"))
+        trial_btn_row = QHBoxLayout()
+        btn_select_all = QPushButton("All")
+        btn_select_all.clicked.connect(lambda: self._set_all_trials_checked(True))
+        trial_btn_row.addWidget(btn_select_all)
+        btn_select_none = QPushButton("None")
+        btn_select_none.clicked.connect(lambda: self._set_all_trials_checked(False))
+        trial_btn_row.addWidget(btn_select_none)
+        right.addLayout(trial_btn_row)
+
+        self.trial_list = QListWidget()
+        self.trial_list.itemChanged.connect(self._redraw)
+        right.addWidget(self.trial_list, stretch=1)
+
         self._run(initial_event_name)
 
     def _on_event_changed(self):
@@ -144,8 +179,8 @@ class _EventPethResultsDialog(QDialog):
 
         event_times = self.groups[event_name]
         self.pre, self.post = self._read_window()
-        self.mode_str = "Corrected" if ctx.show_corrected else "Raw"
-        data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
+        key, _, data_source, _ = get_active_signal(ctx)
+        self.mode_str = signal_short_label(key)
         time_array = ctx.cache['x']
         fs = ctx.cache['fs']
         pre, post = self.pre, self.post
@@ -161,6 +196,7 @@ class _EventPethResultsDialog(QDialog):
                                  f"too close to the start/end of the recording for the current window.")
                 return
             self.peth_result = result
+            self._populate_trial_list(result)
             self.setWindowTitle(f"Event PETH — {event_name} ({self.mode_str})")
             show_window_toast(ctx, f"Event PETH: {result['trial_matrix'].shape[0]} trial(s) for '{event_name}'")
             self._redraw()
@@ -173,11 +209,36 @@ class _EventPethResultsDialog(QDialog):
             show_window_toast(ctx, f"Computing Event PETH for '{event_name}'…")
         run_in_background(ctx, _work, _on_success, _on_error)
 
-    def _row_order(self):
-        matrix = self.peth_result["trial_matrix"]
-        n = matrix.shape[0]
+    def _populate_trial_list(self, result):
+        """Rebuild the trial checklist (all checked) for a freshly computed
+        trial set — called once per _run(), never mutated in place, since
+        checkbox state tied to a row index wouldn't carry over correctly
+        to a different event or window's trial count."""
+        self.trial_list.blockSignals(True)
+        self.trial_list.clear()
+        for i, t in enumerate(result["trial_event_times"]):
+            item = QListWidgetItem(f"Trial {i + 1} — {t:.2f}s")
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked)
+            self.trial_list.addItem(item)
+        self.trial_list.blockSignals(False)
+
+    def _set_all_trials_checked(self, checked):
+        state = Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+        self.trial_list.blockSignals(True)
+        for i in range(self.trial_list.count()):
+            self.trial_list.item(i).setCheckState(state)
+        self.trial_list.blockSignals(False)
+        self._redraw()
+
+    def _selected_trial_indices(self):
+        return [i for i in range(self.trial_list.count())
+                if self.trial_list.item(i).checkState() == Qt.CheckState.Checked]
+
+    def _row_order(self, sub_matrix):
+        n = sub_matrix.shape[0]
         if self.sort_combo.currentText() == self.SORT_PEAK_AMPLITUDE:
-            peak = np.abs(matrix).max(axis=1) if n else np.array([])
+            peak = np.abs(sub_matrix).max(axis=1) if n else np.array([])
             return np.argsort(peak)[::-1]
         return np.arange(n)
 
@@ -187,10 +248,24 @@ class _EventPethResultsDialog(QDialog):
         result = self.peth_result
         time_axis = result["time_axis"]
         matrix = result["trial_matrix"]
-        mean_trace = result["mean_trace"]
-        sem_trace = result["sem_trace"]
 
-        self.lbl_trials.setText(f"{matrix.shape[0]} trial(s)")
+        # Mean/SEM recomputed here from just the checked trials — not
+        # result["mean_trace"]/["sem_trace"], which cover every usable
+        # trial regardless of the checklist. Same formula
+        # compute_event_zscore_peth() uses (ddof=1, zero SEM if <2 trials).
+        selected = self._selected_trial_indices()
+        sub_matrix = matrix[selected] if selected else matrix[:0]
+        n_total = matrix.shape[0]
+        n_selected = sub_matrix.shape[0]
+        if n_selected > 0:
+            mean_trace = sub_matrix.mean(axis=0)
+            sem_trace = (sub_matrix.std(axis=0, ddof=1) / np.sqrt(n_selected)
+                         if n_selected > 1 else np.zeros_like(mean_trace))
+        else:
+            mean_trace = np.zeros_like(time_axis)
+            sem_trace = np.zeros_like(time_axis)
+
+        self.lbl_trials.setText(f"{n_selected} of {n_total} trial(s)")
 
         # Must remove the colorbar before clearing ax_heat — it restores
         # ax_heat's original (pre-colorbar) subplot geometry on removal,
@@ -201,14 +276,14 @@ class _EventPethResultsDialog(QDialog):
         self.ax_heat.clear()
         self.ax_line.clear()
 
-        if matrix.shape[0] == 0:
-            self.ax_heat.text(0.5, 0.5, "No usable trials (too close to recording edges?)",
+        if n_selected == 0:
+            self.ax_heat.text(0.5, 0.5, "No trials selected",
                                ha='center', va='center', transform=self.ax_heat.transAxes)
         else:
-            order = self._row_order()
+            order = self._row_order(sub_matrix)
             im = self.ax_heat.imshow(
-                matrix[order], aspect='auto', cmap='YlGnBu_r',
-                extent=[-self.pre, self.post, matrix.shape[0], 0],
+                sub_matrix[order], aspect='auto', cmap='YlGnBu_r',
+                extent=[-self.pre, self.post, n_selected, 0],
                 vmin=-5, vmax=5, interpolation='nearest',
             )
             self._colorbar = self.fig.colorbar(im, ax=self.ax_heat, fraction=0.046, pad=0.04, label="Z-score")
