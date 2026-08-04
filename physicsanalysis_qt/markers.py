@@ -138,7 +138,11 @@ class _RenamableStoreList(QListWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.RightButton:
             item = self.itemAt(event.pos())
-            if item is not None:
+            # UserRole + 1 == False opts an item out of renaming (used for
+            # Note-text entries, which aren't a real store — renaming one
+            # would set ctx.store_labels under a key nothing ever reads,
+            # silently doing nothing visible).
+            if item is not None and item.data(Qt.ItemDataRole.UserRole + 1) is not False:
                 # Once an editor is already showing for this item, this
                 # click lands on the QLineEdit child widget itself (Qt
                 # dispatches to the topmost child, not the list view) —
@@ -236,6 +240,19 @@ class _RenamableStoreList(QListWidget):
         editor.setFocus(Qt.FocusReason.MouseFocusReason)
 
 
+def _bulk_group_key(m):
+    """Grouping/selection key for the Add/Remove Auto-Detected Markers
+    checklist: phase-tagged markers (onset/offset epocs) group by store
+    id, same as everywhere else that treats a store as a renamable,
+    bulk-actionable unit. Note-style markers (phase is None) all share
+    store == 'Note' regardless of their actual text — parsed straight
+    from Notes.txt — so grouping those by store would still lump every
+    distinct note under one checkbox; group by the note's own label
+    instead so 'Clap', 'Sucrose', etc. each get their own entry. Mirrors
+    _same_name_key's identical distinction for bulk delete."""
+    return m['store'] if m.get('phase') is not None else m['label']
+
+
 class AddMarkerDialog(QDialog):
     """Add Marker entry point: bulk-add every auto-detected marker of a
     chosen store, or configure a custom name/colour/fontsize and start
@@ -251,19 +268,26 @@ class AddMarkerDialog(QDialog):
 
         # ---- bulk-add auto-detected markers (multi-select stores) --------
         detected = (ctx.cache or {}).get('detected_markers', [])
-        stores = sorted({m['store'] for m in detected if m.get('store')})
+        stores = sorted({_bulk_group_key(m) for m in detected if _bulk_group_key(m)})
+        # Which group keys are real, renamable stores vs. individual note
+        # texts (see _bulk_group_key) — used below to disable right-click
+        # rename for the latter.
+        phase_tagged_stores = {m['store'] for m in detected if m.get('phase') is not None}
 
         box1 = QGroupBox("Add / Remove Auto-Detected Markers")
         l1 = QVBoxLayout(box1)
         if stores:
             l1.addWidget(QLabel("Select one or more stores (ctrl/shift-click to "
                                  "multi-select) and Add Selected or Remove Selected. "
-                                 "Right-click a store to rename it."))
+                                 "Right-click a store to rename it (not available for "
+                                 "individual notes)."))
             self.store_list = _RenamableStoreList()
             self.store_list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
             for store_id in stores:
                 item = QListWidgetItem(store_display_name(ctx, store_id))
                 item.setData(Qt.ItemDataRole.UserRole, store_id)
+                if store_id not in phase_tagged_stores:
+                    item.setData(Qt.ItemDataRole.UserRole + 1, False)
                 self.store_list.addItem(item)
             self.store_list.setFixedHeight(min(120, 22 * len(stores) + 4))
             self.store_list.store_renamed.connect(self._on_store_renamed)
@@ -481,7 +505,7 @@ class AddMarkerDialog(QDialog):
             return
         detected = self.ctx.cache.get('detected_markers', [])
         to_add = [dict(m) for m in detected
-                  if m.get('store') in selected_stores and self._phase_allowed(m)]
+                  if _bulk_group_key(m) in selected_stores and self._phase_allowed(m)]
 
         debounced_out = 0
         if self.chk_debounce.isChecked():
@@ -541,7 +565,7 @@ class AddMarkerDialog(QDialog):
             return
         before = len(self.ctx.cache['markers'])
         self.ctx.cache['markers'] = [m for m in self.ctx.cache['markers']
-                                      if m.get('store') not in selected_stores]
+                                      if _bulk_group_key(m) not in selected_stores]
         removed = before - len(self.ctx.cache['markers'])
         from .plotting import simple_plot
         simple_plot(self.ctx)

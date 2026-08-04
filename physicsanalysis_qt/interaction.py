@@ -185,7 +185,7 @@ def on_press(ctx, event):
         return
 
     # Splice mode: same drag-detection pattern as Curve Fit above
-    if ctx.plot_type_combo.currentText() == "Splice":
+    if ctx.splice_click_mode:
         if event.button == 1 and not event.dblclick:
             ctx.press_x, ctx.press_y = event.x, event.y
         return
@@ -424,7 +424,7 @@ def on_release(ctx, event):
             ctx.slope_clicks.clear()
         return
 
-    if (ctx.plot_type_combo.currentText() == "Splice"
+    if (ctx.splice_click_mode
             and event.button == 1
             and event.inaxes == ctx.ax
             and event.xdata is not None):
@@ -505,7 +505,7 @@ def reset_zoom(ctx):
         from .pg_engine import pg_reset_zoom
         pg_reset_zoom(ctx)
         return
-    ctx.ax.set_xlim(ctx.cache['x'][0], ctx.cache['x'][-1])
+    ctx.ax.set_xlim(*plotting.padded_xlim(ctx.cache['x']))
     ctx.ax.autoscale(axis='y')
     _refresh_hover_bg(ctx)
     ctx.canvas.draw_idle()

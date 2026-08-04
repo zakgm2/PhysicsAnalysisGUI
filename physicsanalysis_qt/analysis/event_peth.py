@@ -14,6 +14,7 @@ arbitrary clicked point rather than every occurrence of a named event.
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.ticker import MaxNLocator
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit,
@@ -290,6 +291,10 @@ class _EventPethResultsDialog(QDialog):
 
         tfs, lfs, _ = fig_font_sizes(self.fig)
         self.ax_heat.set_ylabel("Trial", fontweight='bold', fontsize=lfs)
+        # Trial rows are a count, not a continuous quantity — matplotlib's
+        # default locator can otherwise land on fractional ticks (e.g. 2.5)
+        # for small trial counts, which reads as meaningless for "Trial".
+        self.ax_heat.yaxis.set_major_locator(MaxNLocator(integer=True))
         self.ax_heat.axvline(0, color='red', linestyle='--', alpha=0.7)
 
         self.ax_line.plot(time_axis, mean_trace, color='black', linewidth=1.5, label="Mean")

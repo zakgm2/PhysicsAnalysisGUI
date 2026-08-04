@@ -30,22 +30,6 @@ from ..analysis.event_peth import launch_event_peth
 from ..analysis.peak_finder import launch_peak_finder
 
 
-def _on_plot_mode_changed(ctx, text):
-    """Picking 'Splice' from this combo asks the splice mode (keep vs
-    cut) up front, same as clicking the sidebar's scissors icon does —
-    both funnel through here so there's one place that decides what
-    happens next. Reverts to whatever mode was active before if the
-    mode dialog gets cancelled, instead of leaving 'Splice' selected
-    with nothing configured."""
-    if text == "Splice":
-        from ..analysis.splice import start_splice_flow
-        started = start_splice_flow(ctx)
-        if not started:
-            ctx.plot_type_combo.setCurrentText(getattr(ctx, '_pre_splice_mode', 'Analysis'))
-    else:
-        ctx._pre_splice_mode = text
-
-
 def _reload_current(ctx):
     """Re-read whatever's currently loaded from disk, in place — not the
     same thing as Open, which always prompts a file picker. Falls back to
@@ -124,8 +108,7 @@ def build_toolbar(ctx):
     layout.addWidget(analysis_menu_btn)
 
     ctx.plot_type_combo = QComboBox()
-    ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit", "Splice"])
-    ctx.plot_type_combo.currentTextChanged.connect(lambda text: _on_plot_mode_changed(ctx, text))
+    ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit"])
     layout.addWidget(ctx.plot_type_combo)
 
     layout.addWidget(build_plot_signal_control(ctx))
