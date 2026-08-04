@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
 import PhysicsLibrary as pl
 
 from ..background import run_in_background
+from ..context import get_active_signal
 from ..marker_labels import marker_display_label
 from ..toasts import show_error, show_window_toast
 from .dispatch import get_window
@@ -293,7 +294,7 @@ def launch_peak_finder(ctx):
     if dlg.exec() != QDialog.DialogCode.Accepted:
         return
 
-    data_source = ctx.cache['corr'] if ctx.show_corrected else ctx.cache['raw']
+    _, _, data_source, _ = get_active_signal(ctx)
     time_array = ctx.cache['x']
     fs = ctx.cache['fs']
     scope = dlg.scope

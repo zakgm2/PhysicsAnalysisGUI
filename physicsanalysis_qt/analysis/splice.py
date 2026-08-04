@@ -107,10 +107,18 @@ def _apply_splice(ctx, mode, start, end, announce=True):
     source_cache = ctx.original_cache if ctx.original_cache is not None else ctx.cache
     splice_fn = pl.splice_cut_out if mode == MODE_CUT_OUT else pl.splice_keep_inside
 
+    # The Plot dropdown's raw per-wavelength channels (main driver,
+    # isosbestic, ...) are sample-aligned with x/raw/corr and must be
+    # trimmed/cut identically or they'd end up the wrong length (and
+    # showing the wrong span of samples) after this splice — 'normalized'
+    # is excluded since it's already the freshly-spliced 'corr' below.
+    source_signals = source_cache.get('signals', {})
+    extra_channels = {k: sig['y'] for k, sig in source_signals.items() if k != 'normalized'}
+
     result = splice_fn(
         source_cache['x'], source_cache['raw'], source_cache['corr'],
         source_cache['markers'], source_cache.get('detected_markers', []),
-        start, end,
+        start, end, extra_channels=extra_channels,
     )
     if result is None:
         if announce:
@@ -126,12 +134,18 @@ def _apply_splice(ctx, mode, start, end, announce=True):
     spliced['corr'] = result['corr']
     spliced['markers'] = result['markers']
     spliced['detected_markers'] = result['detected_markers']
+    if source_signals:
+        spliced['signals'] = {
+            key: {**sig, 'y': result['corr'] if key == 'normalized' else result['extra_channels'][key]}
+            for key, sig in source_signals.items()
+        }
     tag = "cut" if mode == MODE_CUT_OUT else "spliced"
     spliced['store'] = f"{source_cache['store']} [{tag} {start:.1f}s-{end:.1f}s]"
 
     if ctx.original_cache is None:
         ctx.original_cache = ctx.cache
 
+    ctx._data_generation += 1
     ctx.cache = spliced
     ctx._active_splice = {"mode": mode, "start": start, "end": end}
     simple_plot(ctx)
@@ -159,6 +173,7 @@ def restore_full_recording(ctx):
 
     from ..plotting import simple_plot
 
+    ctx._data_generation += 1
     ctx.cache = ctx.original_cache
     ctx.original_cache = None
     ctx._active_splice = None

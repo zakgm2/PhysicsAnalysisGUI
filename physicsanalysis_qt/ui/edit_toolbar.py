@@ -3,16 +3,17 @@ ui/edit_toolbar.py
 ---------------------
 Left-side icon toolbar for tools that change how the loaded data looks
 or gets analyzed WITHOUT touching the original raw data on disk (or, for
-Splice, without mutating the original in-memory recording either) — Add
-Marker, Splice/Restore, Save Changes, Undo All Changes, and anywhere
-else this grows. Small square icon buttons (emoji glyphs, no external
-image assets needed) in a fixed-width vertical strip, collapsible via a
-small arrow handle so it doesn't have to stay in view.
+Splice, without mutating the original in-memory recording either) —
+Rescale, Add Marker, Splice/Restore, Save Changes, Undo All Changes, and
+anywhere else this grows. Small square icon buttons (emoji glyphs, no
+external image assets needed) in a fixed-width vertical strip,
+collapsible via a small arrow handle so it doesn't have to stay in view.
 """
 
 from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox
 from PyQt6.QtGui import QFont
 
+from ..interaction import reset_zoom
 from ..markers import toggle_marker_mode
 from ..sidecar import save_markers, clear_json_saves
 from ..analysis.splice import restore_full_recording, is_spliced, save_splice
@@ -82,6 +83,11 @@ def build_edit_toolbar(ctx):
     content_layout = QVBoxLayout(content)
     content_layout.setContentsMargins(6, 0, 6, 0)
     content_layout.setSpacing(6)
+
+    btn_rescale = _icon_button(
+        "⛶", "Rescale — fit the view to the full recording (was \"Reset Zoom\")")
+    btn_rescale.clicked.connect(lambda: reset_zoom(ctx))
+    content_layout.addWidget(btn_rescale)
 
     # Add Marker — reuses the existing ctx.btn_add_marker contract:
     # toggle_marker_mode() (markers.py) sets its text/style directly to

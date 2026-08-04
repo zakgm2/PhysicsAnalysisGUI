@@ -20,7 +20,8 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 - **Hover snap** — tracker dots snap to the nearest plotted line and display exact values
 - **Curve fitting** — click two points to fit a model (linear, exponential, Gaussian, sinusoidal, …) to that segment; copy or export parameters as CSV
 - **FFT viewer** — frequency analysis window with automatic peak annotation
-- **PETH / Z-score** — peri-event time histogram for TDT data
+- **PETH / Z-score** — peri-event time histogram for TDT data, plus a GuPPy-style Event PETH (stacked heatmap + trial-averaged trace) with a per-trial include/exclude checklist for dropping an obviously contaminated trial without changing the event or window
+- **Plot signal selector** — for TDT recordings, a toolbar "Plot:" dropdown switches the main plot (and every TDT analysis tool) between Normalized (dF/F), Isosbestic, and Main Driver; options are built from whatever the recording actually has (no Isosbestic entry if there's no 415 reference stream)
 - **PT2 image viewer** — colormap selector, live title editing, PNG/PDF/SVG export
 - **Markers** — a fresh load starts with no markers on screen; use **Add Marker** to bulk-add auto-detected event markers by store (multi-select, add/remove in one action, High/Low phase checkboxes), or configure a custom name/colour/font size once and stamp repeated markers Snipping-Tool style (click, click, click, then stop); a separate multi-select **Remove Markers** list handles batch cleanup; right-click a marker to rename/delete it (or delete every marker sharing that name) individually; markers auto-save as a `.markers.json` sidecar
 - **High/low phase** — auto-detected markers show both onset (high, superscript ¹) and offset (low, superscript ⁰) by default High-only; useful for anything where on-duration matters (a pump, a light), not just the press
@@ -84,7 +85,7 @@ Text field studies live in their own **Text Field Study ▾** menu instead (not 
 | Zoom in / out | Scroll wheel |
 | Pan | Right-click drag |
 | Zoom to region | Left-click drag (rectangle select) |
-| Reset zoom | **Reset Zoom** button |
+| Reset zoom | **Rescale** button (left icon sidebar) |
 | Place markers | **Add Marker** → *Place Custom Markers* → Start Placing, then left-click the plot repeatedly; click **Add Marker** again to stop |
 | Add auto-detected markers | **Add Marker** → *Add / Remove Auto-Detected Markers* → select store(s) → Add Selected |
 | Remove markers | **Add Marker** → *Remove Markers* → select marker(s) → Remove Selected |
@@ -105,6 +106,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.8.0 | Plot signal selector for TDT (Normalized/Isosbestic/Main Driver), Event PETH per-trial include/exclude, Rescale moved to icon sidebar, RANSAC-robust motion correction, zoom-state and PyQtGraph flicker fixes |
+| 2.7.0 | Debounce presses in Add Marker (switch-bounce/double-tap duplicate press filtering) |
+| 2.6.0 | Splice Recording, left icon sidebar, PETH/Peak Finder improvements |
+| 2.5.0 | Event PETH (GuPPy-style stacked heatmap + trial average), Find Significant Peaks, dark mode, settings persistence |
 | 2.4.0 | Text field study analysis + statistical validation (permutation test, FDR correction, Cohen's d, regression, bootstrap CI, leave-one-out) |
 | 2.3.0 | High/low phase markers, store renaming, Measure Intervals, working Reload, inline-rename Qt bug fixes |
 | 2.2.0 | Redesigned opt-in marker workflow, asymmetric analysis window, live-resize fonts/margins, tkinter version removed |

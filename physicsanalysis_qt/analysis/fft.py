@@ -14,6 +14,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton, QFileDialog
 
 import PhysicsLibrary as pl
 
+from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_window_toast
 from .dispatch import get_window
@@ -59,7 +60,7 @@ def launch_fft(ctx, center_t):
         # carries its Y columns in cache['y_columns'] — fall back to the
         # first one so FFT doesn't KeyError on non-TDT single-signal data.
         if 'corr' in cache or 'raw' in cache:
-            signal = cache['corr'] if ctx.show_corrected else cache['raw']
+            _, _, signal, _ = get_active_signal(ctx)
         else:
             signal = next(iter(cache['y_columns'].values()))
         freqs, power, _, _ = pl.compute_fft_slice(cache['x'], signal, center_t, fs, pre=pre, post=post)

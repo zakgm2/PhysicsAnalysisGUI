@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 
 import PhysicsLibrary as pl
 
+from ..plot_signal import refresh_plot_signal_options
 from ..toasts import show_error, show_success
 
 
@@ -124,6 +125,7 @@ class GenericLoaderDialog(QDialog):
 
         fs = float(1.0 / np.median(np.diff(x_data))) if len(x_data) > 1 else 1.0
 
+        self.ctx._data_generation += 1
         self.ctx.cache = {
             "source":      "Generic",
             "source_path": self.path,
@@ -134,6 +136,7 @@ class GenericLoaderDialog(QDialog):
             "fs":          fs,
             "markers":     [],
         }
+        refresh_plot_signal_options(self.ctx)  # no 'signals' map here — hides the Plot dropdown
         self.accept()
         simple_plot(self.ctx)
         show_success(self.ctx, f"Loaded: {t.name}")
