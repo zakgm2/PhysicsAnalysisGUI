@@ -48,8 +48,8 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 ## Installation
 
 ```bash
-git clone https://github.com/zakgm2/PhysicsAnalysis.git
-cd PhysicsAnalysis
+git clone https://github.com/zakgm2/PhysicsAnalysisGUI.git
+cd PhysicsAnalysisGUI
 pip install -r requirements.txt
 ```
 
