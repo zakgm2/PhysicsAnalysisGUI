@@ -6,7 +6,7 @@ Supports TDT fibre photometry recordings, Oxysoft / Artinis NIRS exports, generi
 
 Built on shared logic from [PhysicsLibrary](https://github.com/zakgm2/PhysicsLibrary) — this repo is the widget/window layer.
 
-The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-accelerated, handles large recordings much better) — switch anytime in **Options**. FFT/PETH/Curve Fit/PT2 windows always use matplotlib regardless of the main-plot engine.
+The main plot can render with **matplotlib** (CPU), **PyQtGraph** (fast CPU-side decimation, handles large recordings much better), or **VisPy** (genuinely GPU-native via OpenGL, experimental) — switch anytime in **Options**. FFT/PETH/Curve Fit/PT2 windows always use matplotlib regardless of the main-plot engine.
 
 > A tkinter version of this GUI existed prior to v2.2.0 and has been removed — the PyQt6 version now has full feature parity plus the GPU engine, Options dialog, and background loading. Its history remains in `git log -- PhysicsAnalysisGUI.py` if ever needed.
 
@@ -32,7 +32,7 @@ The main plot can render with either **matplotlib** (CPU) or **PyQtGraph** (GPU-
 - **Golden-ratio font scaling** — all figure text scales proportionally to figure/widget size and stays live during window resize, on both plot engines
 - **Grid toggle** — show/hide background grid from the toolbar
 - **TSI Fit Factor** — extracted automatically from Oxysoft files and shown in the legend
-- **Options dialog** — default folder for Open dialogs, main-plot render decimation, background-thread loading, and CPU/GPU plot engine selection
+- **Options dialog** — default folder for Open dialogs, main-plot render decimation, background-thread loading, and matplotlib/PyQtGraph/VisPy plot engine selection
 - **Text field study analysis** (**Text Field Study ▾** menu) — pick a folder of one-JSON-file-per-subject data (any schema), then pick pairs of fields to compare directly from the actual field names found in that folder — no fixed format, no grouping concept. Computes per-field word counts and low-word-count quality flags, embeds each compared field with a sentence-transformers model, an optional delta-vector magnitude between two fields, and a paired-similarity metric per pair with a permutation test (p-value, effect size) against a shuffled-pairing null plus a word-count confound check; results in a table with full-DataFrame CSV export. Field configuration is saved locally outside the repo, not in source.
 - **Statistical validation** (for text field studies) — permutation-test p-value with Benjamini-Hochberg FDR correction across pairs, Cohen's d effect size, a word-count-controlled OLS regression per field, a bootstrap 95% confidence interval on the mean similarity, and leave-one-out sensitivity flags; one row per pair, CSV export
 
@@ -106,6 +106,8 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.11.0 | VisPy (OpenGL/GPU-native) added as a third plot engine alongside matplotlib and PyQtGraph, with full interaction parity (rectangle-zoom/pan, markers, legend, hover, decimation, export) |
+| 2.10.0 | Update check now blocks launch entirely for a stale PhysicsAnalysis version (download-link dialog instead of a soft notice); now also checks PhysicsLibrary |
 | 2.9.0 | Loading screen with a GitHub update check, `Launch PhysicsAnalysis.lnk` desktop launcher, splice stacking with a manager dialog, per-note Add Marker grouping, RANSAC inlier-fraction toast, Tick epoc excluded from markers/analysis |
 | 2.8.0 | Plot signal selector for TDT (Normalized/Isosbestic/Main Driver), Event PETH per-trial include/exclude, Rescale moved to icon sidebar, RANSAC-robust motion correction, zoom-state and PyQtGraph flicker fixes |
 | 2.7.0 | Debounce presses in Add Marker (switch-bounce/double-tap duplicate press filtering) |

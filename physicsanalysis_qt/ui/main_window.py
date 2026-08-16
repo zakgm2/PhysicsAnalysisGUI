@@ -17,19 +17,30 @@ from PyQt6.QtWidgets import (
 
 from .. import interaction
 from ..pg_engine import build_pg_widget, sync_pg_margins
+from ..update_check import local_version
+from ..vispy_engine import build_vispy_widget, sync_vispy_margins
 from .toolbar import build_toolbar
 from .edit_toolbar import build_edit_toolbar
 
 
+def _widget_for_engine(ctx):
+    engine = ctx.settings.get("plot_engine")
+    if engine == "pyqtgraph":
+        return ctx.pg_widget
+    if engine == "vispy":
+        return ctx.vispy_canvas.native
+    return ctx.canvas
+
+
 class _PlotStack(QStackedWidget):
     """QStackedWidget that debounce-triggers a re-render on resize when
-    the PyQtGraph engine is active, so its fonts stay scaled to the
-    current widget size — matplotlib gets this for free via its own
-    resize_event (see interaction.on_resize). Also keeps the PyQtGraph
-    plot's inset margins matched to matplotlib's subplot margins on every
-    resize, so both engines frame their plot the same distance from the
-    edges — the widget itself stays full size either way; only how much
-    of it the axes/data occupy changes."""
+    the PyQtGraph or VisPy engine is active, so their fonts stay scaled
+    to the current widget size — matplotlib gets this for free via its
+    own resize_event (see interaction.on_resize). Also keeps each
+    engine's inset margins matched to matplotlib's subplot margins on
+    every resize, so all three engines frame their plot the same
+    distance from the edges — the widget itself stays full size either
+    way; only how much of it the axes/data occupy changes."""
 
     def __init__(self, ctx):
         super().__init__()
@@ -50,10 +61,15 @@ class _PlotStack(QStackedWidget):
         # matching how matplotlib's own canvas already redraws live. The
         # accurate two-pass reprobe + full data replot are debounced to
         # once after the drag settles, since both are more expensive.
-        if ctx.settings.get("plot_engine") == "pyqtgraph":
+        engine = ctx.settings.get("plot_engine")
+        if engine == "pyqtgraph":
             from ..pg_engine import pg_refresh_fonts
             pg_refresh_fonts(ctx)
+        elif engine == "vispy":
+            from ..vispy_engine import vispy_refresh_fonts
+            vispy_refresh_fonts(ctx)
         sync_pg_margins(ctx, reprobe=False)
+        sync_vispy_margins(ctx)
         self._timer.start(150)
 
     def _replot(self):
@@ -67,15 +83,25 @@ class _PlotStack(QStackedWidget):
         # — same class of bug pg_set_grid_visibility's docstring already
         # covers for grid toggles.
         ctx = self._ctx
-        if ctx.settings.get("plot_engine") == "pyqtgraph":
+        engine = ctx.settings.get("plot_engine")
+        if engine == "pyqtgraph":
             from ..pg_engine import pg_refresh_fonts
             pg_refresh_fonts(ctx)
+        elif engine == "vispy":
+            from ..vispy_engine import vispy_refresh_fonts
+            vispy_refresh_fonts(ctx)
         sync_pg_margins(ctx, reprobe=True)
+        sync_vispy_margins(ctx)
 
 
 def build_main_window(ctx):
     ctx.win = QMainWindow()
-    ctx.win.setWindowTitle("Physics Analysis GUI (PyQt6)")
+    try:
+        version = local_version("physicsanalysis_qt")
+    except Exception:
+        version = None  # missing/unreadable pyproject.toml (e.g. a packaged build) — title still works without it
+    title = "Physics Analysis GUI (PyQt6)" + (f" — v{version}" if version else "")
+    ctx.win.setWindowTitle(title)
     ctx.win.resize(1250, 850)
 
     central = QWidget()
@@ -104,10 +130,12 @@ def build_main_window(ctx):
     build_pg_widget(ctx)  # sets ctx.pg_widget / ctx.pg_plot_item
     ctx.stacked_plot_widget.addWidget(ctx.pg_widget)
 
-    ctx.stacked_plot_widget.setCurrentWidget(
-        ctx.pg_widget if ctx.settings.get("plot_engine") == "pyqtgraph" else ctx.canvas
-    )
+    vispy_native = build_vispy_widget(ctx)  # sets ctx.vispy_canvas / ctx.vispy_view
+    ctx.stacked_plot_widget.addWidget(vispy_native)
+
+    ctx.stacked_plot_widget.setCurrentWidget(_widget_for_engine(ctx))
     sync_pg_margins(ctx)
+    sync_vispy_margins(ctx)
 
     ctx.status_bar = QStatusBar()
     ctx.win.setStatusBar(ctx.status_bar)
@@ -147,8 +175,8 @@ def switch_plot_engine(ctx):
     the newly selected engine."""
     from ..plotting import simple_plot
 
-    target = ctx.pg_widget if ctx.settings.get("plot_engine") == "pyqtgraph" else ctx.canvas
-    ctx.stacked_plot_widget.setCurrentWidget(target)
+    ctx.stacked_plot_widget.setCurrentWidget(_widget_for_engine(ctx))
     sync_pg_margins(ctx)
+    sync_vispy_margins(ctx)
     if ctx.cache is not None:
         simple_plot(ctx)

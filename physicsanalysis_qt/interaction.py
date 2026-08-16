@@ -58,8 +58,8 @@ def _is_manual_double_click(ctx, event):
 
 
 def _apply_and_redraw(ctx):
-    if ctx.settings.get("plot_engine") == "pyqtgraph":
-        plotting.simple_plot(ctx)  # pg has no incremental "apply", full rebuild
+    if ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
+        plotting.simple_plot(ctx)  # neither has an incremental "apply" — full rebuild
     else:
         plotting._apply_plot_attrs(ctx)
         ctx.canvas.draw_idle()
@@ -96,7 +96,7 @@ def _try_rename_text_element(ctx, event):
     """Double-click on the title, an axis label, or a legend entry to
     retype just that one — matplotlib engine only (title/labels/legend
     are Text artists we can hit-test against click position)."""
-    if event.x is None or event.y is None or ctx.settings.get("plot_engine") == "pyqtgraph":
+    if event.x is None or event.y is None or ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
         return False
 
     ax, fig = ctx.ax, ctx.fig
@@ -504,6 +504,10 @@ def reset_zoom(ctx):
     if ctx.settings.get("plot_engine") == "pyqtgraph":
         from .pg_engine import pg_reset_zoom
         pg_reset_zoom(ctx)
+        return
+    if ctx.settings.get("plot_engine") == "vispy":
+        from .vispy_engine import vispy_reset_zoom
+        vispy_reset_zoom(ctx)
         return
     ctx.ax.set_xlim(*plotting.padded_xlim(ctx.cache['x']))
     ctx.ax.autoscale(axis='y')

@@ -32,6 +32,22 @@ def main_plot_scale(widget):
     return diag / ref_diag
 
 
+def scaled_plot_font_sizes(ctx):
+    """(title_fs, xlabel_fs, ylabel_fs, leg_fs) in points for the main
+    plot, scaled by main_plot_scale() — shared by every non-matplotlib
+    engine (PyQtGraph, VisPy) so they stay visually consistent with each
+    other and matplotlib doesn't need this at all (it scales its own
+    figure text via fig_font_sizes() above instead)."""
+    plot_attrs = ctx.plot_attrs
+    scale = main_plot_scale(ctx.stacked_plot_widget)
+    return (
+        max(8, round(plot_attrs["title_fs"] * scale)),
+        max(6, round(plot_attrs["xlabel_fs"] * scale)),
+        max(6, round(plot_attrs["ylabel_fs"] * scale)),
+        max(5, round(plot_attrs["leg_fs"] * scale)),
+    )
+
+
 def fig_font_sizes(fig):
     """
     Return (title_fs, label_fs, legend_fs) using the golden ratio.

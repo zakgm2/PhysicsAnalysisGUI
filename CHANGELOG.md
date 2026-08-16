@@ -2,6 +2,18 @@
 
 ---
 
+## v2.11.0
+**New: VisPy (OpenGL/GPU-native) plot engine — third option alongside matplotlib and PyQtGraph**
+- `Options -> Plot Engine -> VisPy (OpenGL, experimental)` adds a genuinely GPU-native rendering engine for the main plot (`physicsanalysis_qt/vispy_engine.py` + `vispy_interaction.py`, ~950 combined lines). Unlike PyQtGraph — whose 2D line rendering is actually CPU/Qt-painter-based, fast via clever decimation rather than true GPU shading — VisPy renders through OpenGL directly.
+- Full feature parity with the other two engines: axes with real tick labels, gridlines, a hand-built legend (VisPy has no legend widget) shown as a Qt overlay so it doesn't shrink the plot area the way a side panel would, event markers as hand-built vertical lines (VisPy has no infinite-line visual) that stay extended to the current view during live pan/zoom, hover snap-to-nearest-point with the status bar readout, marker placement, right-click marker rename/delete menu, Curve Fit and Splice click-to-anchor, and double-click-to-analyze.
+- Left-drag = rectangle zoom (a translucent yellow overlay while dragging), right-drag = pan, wheel = zoom at cursor — matching the app's existing convention on the other two engines via a custom `RectZoomPanCamera` (VisPy's own stock camera binds left-drag to pan and right-drag to zoom instead).
+- Manual min/max-envelope decimation (VisPy has no PyQtGraph-style built-in downsampling) keeps pan/zoom cost independent of recording size — verified against a 1,055,744-sample real recording: displayed points stay capped at the configured budget while hover/click still resolve against the full-resolution data underneath. Re-decimates automatically as you pan/zoom.
+- Title/axis-label/tick font sizes and axis-column pixel widths scale with window size the same way PyQtGraph's engine does, so all three engines look proportionally consistent at any window size.
+- Export View support via `canvas.render()`, compositing the Qt-overlay legend back in so the exported PNG matches what's actually on screen.
+- Marked "experimental" in the Options dialog — genuinely GPU-native rendering is a real potential win for very large recordings, but this is the newest of the three engines and hasn't seen the same real-world mileage as matplotlib or PyQtGraph yet.
+
+---
+
 ## v2.10.0
 **Changed: Update check now blocks launch for a stale app, checks PhysicsLibrary too**
 - An available PhysicsAnalysis update now refuses to launch the app at all — instead of building the main window, it shows a dialog with the new version number and a link to download it (an "Open Download Page" button, plus the raw URL as text). A PhysicsLibrary update stays a quiet, non-blocking splash status line, since that's developed locally alongside this app and drifting ahead of what's pushed to GitHub is an expected mid-work state, not something to block launch over.

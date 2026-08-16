@@ -20,6 +20,7 @@ from . import plotting
 _ENGINE_LABELS = {
     "matplotlib": "Matplotlib (CPU)",
     "pyqtgraph":  "PyQtGraph (GPU-accelerated)",
+    "vispy":      "VisPy (OpenGL, experimental)",
 }
 _ENGINE_VALUES = {v: k for k, v in _ENGINE_LABELS.items()}
 
@@ -50,6 +51,8 @@ class OptionsDialog(QDialog):
         g0.addWidget(self.combo_engine, 0, 1)
         engine_note = QLabel(
             "PyQtGraph is GPU-accelerated and handles large recordings much better.\n"
+            "VisPy is OpenGL/GPU-native but still an early, work-in-progress engine\n"
+            "here — markers, legend, and most interactions aren't wired up yet.\n"
             "Legend position (below) is matplotlib-only. FFT/PETH/Curve Fit/PT2\n"
             "windows always use matplotlib either way."
         )
