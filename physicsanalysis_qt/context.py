@@ -58,7 +58,7 @@ def default_settings():
         "default_folder":      desktop if os.path.isdir(desktop) else os.path.expanduser("~"),
         "decimate_max_points": 2000,
         "background_loading":  True,
-        "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph"
+        "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph" | "vispy"
         "theme":               "light",       # "light" | "dark"
     }
 
@@ -88,6 +88,17 @@ class AppState:
         self.pg_lines = []            # (PlotDataItem, full_x, full_y)
         self._pg_axis_probe = None    # (left_axis_w, bottom_axis_h) cache — see sync_pg_margins
         self.pg_hover_scatter = None
+
+        # VisPy (OpenGL, GPU-native) engine — only populated if that
+        # engine is used. Built incrementally alongside pg_* above as
+        # vispy_engine.py grows (see the VisPy build-stage plan).
+        self.vispy_canvas = None        # vispy.scene.SceneCanvas
+        self.vispy_view = None          # grid.add_view() result
+        self.vispy_line_visuals = []    # (Line visual, full_x, full_y, raw_name)
+        self.vispy_legend_widget = None # hand-built Qt overlay, not part of the scene
+        self.vispy_marker_lines = []    # (Line visual, Text visual, marker_dict)
+        self._vispy_press_pos = None    # (x, y) screen pixel — click-vs-drag detection
+        self._vispy_press_button = None
 
         # Toolbar widgets (assigned in ui/toolbar.py)
         self.plot_type_combo = None

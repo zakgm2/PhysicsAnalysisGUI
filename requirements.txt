@@ -5,4 +5,5 @@ openpyxl
 pandas
 PyQt6
 pyqtgraph
+vispy==0.16.2
 ZaksPhysicsLibrary

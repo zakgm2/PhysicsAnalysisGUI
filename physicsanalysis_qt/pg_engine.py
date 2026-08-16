@@ -30,7 +30,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QFileDialog
 
 from .context import get_active_signal
-from .fonts import main_plot_scale
+from .fonts import scaled_plot_font_sizes
 from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
 from .toasts import show_error, show_window_toast
 
@@ -78,21 +78,6 @@ def build_pg_widget(ctx):
 
 _GEN_COLORS = ['#CC0000', '#0033CC', '#228B22', '#CC6600',
                '#6600CC', '#008888', '#AA0055', '#005588']
-
-
-def _scaled_font_sizes(ctx):
-    """(title_fs, xlabel_fs, ylabel_fs, leg_fs) in points, scaled the same
-    way for whoever needs them (pg_simple_plot and sync_pg_margins both
-    need the title size — the latter to reserve the right amount of
-    space for it)."""
-    plot_attrs = ctx.plot_attrs
-    scale = main_plot_scale(ctx.stacked_plot_widget)
-    return (
-        max(8, round(plot_attrs["title_fs"] * scale)),
-        max(6, round(plot_attrs["xlabel_fs"] * scale)),
-        max(6, round(plot_attrs["ylabel_fs"] * scale)),
-        max(5, round(plot_attrs["leg_fs"] * scale)),
-    )
 
 
 def _title_row_height(title_fs):
@@ -152,7 +137,7 @@ def sync_pg_margins(ctx, reprobe=True):
     if w <= 0 or h <= 0:
         return
 
-    title_fs, _, _, _ = _scaled_font_sizes(ctx)
+    title_fs, _, _, _ = scaled_plot_font_sizes(ctx)
     target_left = round(sp.left * w)
     target_right = round((1 - sp.right) * w)
     target_top = max(0, round((1 - sp.top) * h) - _title_row_height(title_fs))
@@ -310,7 +295,7 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
     # size and both stay proportional as the window is resized, instead of
     # each interpreting the configured "24pt" through a different renderer
     # (matplotlib: fixed-DPI raster; PyQtGraph: native Qt font at OS DPI).
-    title_fs, xlabel_fs, ylabel_fs, leg_fs = _scaled_font_sizes(ctx)
+    title_fs, xlabel_fs, ylabel_fs, leg_fs = scaled_plot_font_sizes(ctx)
     weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
 
     plot_item.setTitle(title_text, size=f'{title_fs}pt', color='#000',
@@ -363,7 +348,7 @@ def pg_refresh_fonts(ctx):
     xlabel_text = plot_attrs["xlabel"] or ctx._last_xlabel or ""
     ylabel_text = plot_attrs["ylabel"] or ctx._last_ylabel or ""
 
-    title_fs, xlabel_fs, ylabel_fs, leg_fs = _scaled_font_sizes(ctx)
+    title_fs, xlabel_fs, ylabel_fs, leg_fs = scaled_plot_font_sizes(ctx)
     weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
 
     plot_item.setTitle(title_text, size=f'{title_fs}pt', color='#000',
@@ -425,7 +410,7 @@ def pg_update_active_signal(ctx):
     title = f"{label} — {cache['store']}"
     ctx._last_title = title
     title_text = plot_attrs["title"] or title
-    title_fs, _, _, _ = _scaled_font_sizes(ctx)
+    title_fs, _, _, _ = scaled_plot_font_sizes(ctx)
     weight = 'bold' if plot_attrs.get("bold", True) else 'normal'
     plot_item.setTitle(title_text, size=f'{title_fs}pt', color='#000',
                         **{'font-weight': weight})

@@ -204,6 +204,11 @@ def simple_plot(ctx, draw_now=True):
         pg_simple_plot(ctx)
         return
 
+    if ctx.settings.get("plot_engine") == "vispy":
+        from .vispy_engine import vispy_simple_plot
+        vispy_simple_plot(ctx)
+        return
+
     ax = ctx.ax
     zoom_key = ("matplotlib", ctx._data_generation)
     is_new_dataset = zoom_key != ctx._last_zoomed_key
@@ -324,6 +329,10 @@ def set_grid_visibility(ctx, show):
         from .pg_engine import pg_set_grid_visibility
         pg_set_grid_visibility(ctx)
         return
+    if ctx.settings.get("plot_engine") == "vispy":
+        from .vispy_engine import vispy_set_grid_visibility
+        vispy_set_grid_visibility(ctx)
+        return
     if ctx.show_grid:
         # Passing style kwargs alongside grid(False, ...) makes matplotlib
         # force the grid back ON regardless of the False — only pass them
@@ -341,6 +350,10 @@ def export_canvas_action(ctx):
     if ctx.settings.get("plot_engine") == "pyqtgraph":
         from .pg_engine import pg_export_view
         pg_export_view(ctx)
+        return
+    if ctx.settings.get("plot_engine") == "vispy":
+        from .vispy_engine import vispy_export_view
+        vispy_export_view(ctx)
         return
     start_dir = ctx.last_dir or ctx.settings["default_folder"]
     file_path, _ = QFileDialog.getSaveFileName(

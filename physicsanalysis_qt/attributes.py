@@ -140,8 +140,8 @@ class AttributesDialog(QDialog):
 
         plotting.set_grid_visibility(ctx, self.cb_grid.isChecked())
 
-        if ctx.settings.get("plot_engine") == "pyqtgraph":
-            plotting.simple_plot(ctx)  # pg has no incremental "apply", full rebuild
+        if ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
+            plotting.simple_plot(ctx)  # neither has an incremental "apply" — full rebuild
         else:
             plotting._apply_plot_attrs(ctx)
             _refresh_hover_bg(ctx)
