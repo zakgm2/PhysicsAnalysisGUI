@@ -36,7 +36,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller PhysicsAnalysis.spec
+        run: pyinstaller PhysicsAnalysis.spec --onefile
 
       - name: Zip the build (Windows)
         if: runner.os == 'Windows'

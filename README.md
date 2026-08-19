@@ -53,6 +53,12 @@ cd PhysicsAnalysisGUI
 pip install -r requirements.txt
 ```
 
+**Prebuilt executables** (no Python install needed) are attached to each
+[GitHub Release](https://github.com/zakgm2/PhysicsAnalysis/releases) for
+Windows and macOS. **macOS**: the app isn't signed with a paid Apple
+Developer certificate, so the first launch needs one extra step — see
+[MACOS_INSTALL.md](MACOS_INSTALL.md).
+
 ---
 
 ## Running
