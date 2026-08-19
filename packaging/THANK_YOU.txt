@@ -1,0 +1,12 @@
+Thank you for trying Physics Analysis GUI!
+
+This app is actively being developed, and every bit of feedback helps -
+if something breaks, looks wrong, or you find yourself wishing it did
+something it doesn't, I'd genuinely like to hear about it.
+
+Bug reports / feature requests / general feedback:
+  https://github.com/zakgm2/PhysicsAnalysis/issues
+
+Thanks again for taking the time to check it out.
+
+- Zak

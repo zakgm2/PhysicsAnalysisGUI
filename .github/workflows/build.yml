@@ -4,18 +4,22 @@ name: Build Executables (Windows + macOS)
 #   git tag v2.11.0
 #   git push origin v2.11.0
 # Builds a native PyInstaller executable on each OS separately - it
-# can't cross-compile, has to actually run on the target OS - and
-# attaches both as assets on a GitHub Release for that tag.
-#
-# PhysicsAnalysis.spec builds onefile mode, so Windows produces a single
-# dist/PhysicsAnalysis.exe directly - no zip step needed there. macOS
-# still needs zipping: a .app is inherently a directory bundle (that's
-# just how Mac apps work), independent of onefile vs onedir.
+# can't cross-compile, has to actually run on the target OS - packages
+# each as a zip alongside the packaging/ collateral (README, thank-you
+# note, and macOS's Gatekeeper first-launch instructions), and attaches
+# both as assets on a GitHub Release for that tag.
 on:
   push:
     tags:
       - "v*.*.*"
   workflow_dispatch:  # manual "Run workflow" button, for testing without a tag
+
+# The default GITHUB_TOKEN is read-only unless a workflow says otherwise
+# (either here, or repo-wide under Settings -> Actions -> General ->
+# Workflow permissions) - without this, softprops/action-gh-release below
+# 403s trying to create/attach to the release.
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -23,7 +27,7 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: PhysicsAnalysis-windows.exe
+            asset_name: PhysicsAnalysis-windows.zip
           - os: macos-latest
             asset_name: PhysicsAnalysis-macos.zip
     runs-on: ${{ matrix.os }}
@@ -66,25 +70,45 @@ jobs:
       - name: Build with PyInstaller
         run: pyinstaller PhysicsAnalysis.spec
 
-      - name: Rename build (Windows)
+      # Not code-signed/notarized (that needs a paid $99/year Apple
+      # Developer account) - without it, Gatekeeper blocks a plain
+      # double-click on first launch on macOS. MACOS_INSTALL.md (repo
+      # root) explains the right-click -> Open workaround (plus an
+      # xattr fallback); only relevant there, so only copied into the
+      # macOS zip below.
+      - name: Stage packaging files (Windows)
         if: runner.os == 'Windows'
-        run: Rename-Item -Path dist/PhysicsAnalysis.exe -NewName ${{ matrix.asset_name }}
         shell: pwsh
+        run: |
+          Copy-Item "packaging\README.txt" "dist\"
+          Copy-Item "packaging\THANK_YOU.txt" "dist\"
+
+      - name: Stage packaging files (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cp packaging/README.txt dist/
+          cp packaging/THANK_YOU.txt dist/
+          cp MACOS_INSTALL.md dist/
+
+      - name: Zip the build (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path dist\PhysicsAnalysis.exe, dist\README.txt, dist\THANK_YOU.txt -DestinationPath ${{ matrix.asset_name }}
 
       - name: Zip the build (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.asset_name }} PhysicsAnalysis.app
+          zip -r ../${{ matrix.asset_name }} PhysicsAnalysis.app README.txt THANK_YOU.txt MACOS_INSTALL.md
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: ${{ runner.os == 'Windows' && format('dist/{0}', matrix.asset_name) || matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ runner.os == 'Windows' && format('dist/{0}', matrix.asset_name) || matrix.asset_name }}
+          files: ${{ matrix.asset_name }}
