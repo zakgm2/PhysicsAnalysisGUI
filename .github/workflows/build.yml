@@ -3,9 +3,14 @@ name: Build Executables (Windows + macOS)
 # Runs when you push a version tag, e.g.:
 #   git tag v2.11.0
 #   git push origin v2.11.0
-# Builds a native PyInstaller executable on each OS separately — it
-# can't cross-compile, has to actually run on the target OS — and
+# Builds a native PyInstaller executable on each OS separately - it
+# can't cross-compile, has to actually run on the target OS - and
 # attaches both as assets on a GitHub Release for that tag.
+#
+# PhysicsAnalysis.spec builds onefile mode, so Windows produces a single
+# dist/PhysicsAnalysis.exe directly - no zip step needed there. macOS
+# still needs zipping: a .app is inherently a directory bundle (that's
+# just how Mac apps work), independent of onefile vs onedir.
 on:
   push:
     tags:
@@ -18,9 +23,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: PhysicsAnalysis-windows
+            asset_name: PhysicsAnalysis-windows.exe
           - os: macos-latest
-            asset_name: PhysicsAnalysis-macos
+            asset_name: PhysicsAnalysis-macos.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,27 +41,27 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller PhysicsAnalysis.spec --onefile
+        run: pyinstaller PhysicsAnalysis.spec
 
-      - name: Zip the build (Windows)
+      - name: Rename build (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/PhysicsAnalysis -DestinationPath ${{ matrix.asset_name }}.zip
+        run: Rename-Item -Path dist/PhysicsAnalysis.exe -NewName ${{ matrix.asset_name }}
         shell: pwsh
 
       - name: Zip the build (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.asset_name }}.zip PhysicsAnalysis.app
+          zip -r ../${{ matrix.asset_name }} PhysicsAnalysis.app
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: ${{ matrix.asset_name }}.zip
+          path: ${{ runner.os == 'Windows' && format('dist/{0}', matrix.asset_name) || matrix.asset_name }}
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.asset_name }}.zip
+          files: ${{ runner.os == 'Windows' && format('dist/{0}', matrix.asset_name) || matrix.asset_name }}

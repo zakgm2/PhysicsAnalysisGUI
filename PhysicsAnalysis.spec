@@ -1,8 +1,10 @@
 # PhysicsAnalysis.spec
 # ---------------------
-# PyInstaller build spec for the PyQt6 desktop app, onedir mode (not
-# onefile — avoids onefile's self-extract-to-temp cost on every launch,
-# which matters given matplotlib/pyqtgraph/vispy's own startup cost).
+# PyInstaller build spec for the PyQt6 desktop app, onefile mode — a
+# single executable instead of a folder of DLLs/data files, so CI can
+# upload/attach it directly with no zip step. Trade-off: onefile
+# self-extracts to a temp dir on every launch, adding startup latency on
+# top of matplotlib/pyqtgraph/vispy's own import cost.
 #
 # vispy has no maintained PyInstaller hook (confirmed: vispy/vispy#1643) —
 # it resolves its .glsl shader files and font data relative to
@@ -77,8 +79,10 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name='PhysicsAnalysis',
     debug=False,
     bootloader_ignore_signals=False,
@@ -88,19 +92,9 @@ exe = EXE(
     icon=_icon,
 )
 
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    name='PhysicsAnalysis',
-)
-
 if sys.platform == 'darwin':
     app = BUNDLE(
-        coll,
+        exe,
         name='PhysicsAnalysis.app',
         icon=_icon,
         bundle_identifier='com.zakgm2.physicsanalysis',
