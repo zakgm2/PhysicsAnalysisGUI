@@ -40,6 +40,29 @@ jobs:
           pip install .
           pip install pyinstaller
 
+      # PhysicsAnalysis.spec looks for physicsanalysis_qt/assets/icon.icns
+      # and falls back to no icon if it's missing (see the spec's own
+      # comment) - built here from icon.png since .icns can only be
+      # created with macOS's own iconutil, and there's no Mac available
+      # to do this locally. Source is only 192x192, so the largest
+      # (1024x1024) iconset entries are just upscaled and will look soft -
+      # replace icon.png with a higher-res source (512x512+) to fix that.
+      - name: Generate macOS .icns from icon.png
+        if: runner.os == 'macOS'
+        run: |
+          mkdir icon.iconset
+          sips -z 16 16     physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_16x16.png
+          sips -z 32 32     physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_16x16@2x.png
+          sips -z 32 32     physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_32x32.png
+          sips -z 64 64     physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_32x32@2x.png
+          sips -z 128 128   physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_128x128.png
+          sips -z 256 256   physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_128x128@2x.png
+          sips -z 256 256   physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_256x256.png
+          sips -z 512 512   physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_256x256@2x.png
+          sips -z 512 512   physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_512x512.png
+          sips -z 1024 1024 physicsanalysis_qt/assets/icon.png --out icon.iconset/icon_512x512@2x.png
+          iconutil -c icns icon.iconset -o physicsanalysis_qt/assets/icon.icns
+
       - name: Build with PyInstaller
         run: pyinstaller PhysicsAnalysis.spec
 
