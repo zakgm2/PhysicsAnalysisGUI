@@ -2,6 +2,12 @@
 
 ---
 
+## v2.11.2
+**Fixed**
+- `physicsanalysis_qt/__init__.py`'s `__version__` (what a packaged build actually reads at runtime — there's no `pyproject.toml` on disk in a frozen exe) hadn't been bumped alongside `pyproject.toml`'s version during the v2.11.1 release, so every freshly-built app still reported itself as the *previous* version and permanently thought a newer release was available no matter how many times you reinstalled "latest" — the update-check comparison was accurate, the baked-in version string it was comparing against just wasn't. Also added explicit `[tool.setuptools.packages.find]` config to `pyproject.toml`: the new `packaging/` directory (README/thank-you files for the distributed zips) collided with setuptools' automatic flat-layout package discovery — it happens to share a name with an actual dependency of this project — causing `pip install .` to fail outright in CI with "Multiple top-level packages discovered."
+
+---
+
 ## v2.11.1
 **New: CI-built Windows/macOS executables**
 - `.github/workflows/build.yml`: on a version tag push (or manually via the Actions tab), builds a native PyInstaller executable on `windows-latest` and `macos-latest` separately (PyInstaller can't cross-compile) and attaches both to a GitHub Release for that tag.
