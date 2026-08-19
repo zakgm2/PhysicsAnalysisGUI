@@ -20,8 +20,22 @@
 # text_field_study.py.
 #
 # Run with: pyinstaller PhysicsAnalysis.spec
+#
+# pathex: only needed on a machine where PhysicsLibrary is editable-
+# installed via a PEP 660 import-hook finder (not a plain sys.path
+# entry) — PyInstaller's static analysis can't follow that redirect, so
+# it needs the sibling repo's actual source directory to find/bundle it
+# at all. CI installs PhysicsLibrary as a normal (non-editable) package
+# from PyPI, where PyInstaller finds it via site-packages with no help
+# needed, so this only adds the local dev checkout's path when it's
+# actually present on the machine running this build.
+#
+# icon: .ico is Windows-only; PyInstaller wants .icns on macOS (a bare
+# .ico there is silently ignored). Picked per-platform below; add
+# physicsanalysis_qt/assets/icon.icns to get a real icon on macOS builds.
 
 import os
+import sys
 
 from PyInstaller.utils.hooks import collect_data_files
 
@@ -30,14 +44,18 @@ block_cipher = None
 vispy_datas = collect_data_files('vispy', subdir='glsl')
 vispy_datas += collect_data_files('vispy', subdir=os.path.join('io', '_data'))
 
+_local_physicslibrary = r'C:\Users\zakgm\Desktop\Github\PhysicsLibrary'
+_pathex = [_local_physicslibrary] if os.path.isdir(_local_physicslibrary) else []
+
+if sys.platform == 'darwin':
+    _icon_path = 'physicsanalysis_qt/assets/icon.icns'
+    _icon = _icon_path if os.path.isfile(_icon_path) else None
+else:
+    _icon = 'physicsanalysis_qt/assets/icon.ico'
+
 a = Analysis(
     ['run_qt.pyw'],
-    # PhysicsLibrary is editable-installed via a PEP 660 import-hook
-    # finder (not a plain sys.path entry) — PyInstaller's static
-    # analysis can't follow that redirect, so it needs the sibling
-    # repo's actual source directory here to find/bundle it at all.
-    # Adjust if this machine's PhysicsLibrary checkout ever moves.
-    pathex=[r'C:\Users\zakgm\Desktop\Github\PhysicsLibrary'],
+    pathex=_pathex,
     binaries=[],
     datas=[
         ('physicsanalysis_qt/assets', 'physicsanalysis_qt/assets'),
@@ -67,7 +85,7 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='physicsanalysis_qt/assets/icon.ico',
+    icon=_icon,
 )
 
 coll = COLLECT(
@@ -79,3 +97,11 @@ coll = COLLECT(
     upx=False,
     name='PhysicsAnalysis',
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='PhysicsAnalysis.app',
+        icon=_icon,
+        bundle_identifier='com.zakgm2.physicsanalysis',
+    )

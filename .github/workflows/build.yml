@@ -1,0 +1,62 @@
+name: Build Executables (Windows + macOS)
+
+# Runs when you push a version tag, e.g.:
+#   git tag v2.11.0
+#   git push origin v2.11.0
+# Builds a native PyInstaller executable on each OS separately — it
+# can't cross-compile, has to actually run on the target OS — and
+# attaches both as assets on a GitHub Release for that tag.
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:  # manual "Run workflow" button, for testing without a tag
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            asset_name: PhysicsAnalysis-windows
+          - os: macos-latest
+            asset_name: PhysicsAnalysis-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller PhysicsAnalysis.spec
+
+      - name: Zip the build (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/PhysicsAnalysis -DestinationPath ${{ matrix.asset_name }}.zip
+        shell: pwsh
+
+      - name: Zip the build (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -r ../${{ matrix.asset_name }}.zip PhysicsAnalysis.app
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}.zip
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.asset_name }}.zip
