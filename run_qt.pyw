@@ -24,7 +24,7 @@ from physicsanalysis_qt.plotting import apply_theme_to_canvas
 from physicsanalysis_qt.splash import SplashScreen, app_icon
 from physicsanalysis_qt.theme import apply_theme
 from physicsanalysis_qt.ui.main_window import build_main_window
-from physicsanalysis_qt.update_check import UpdateCheckWorker, show_update_required_dialog
+from physicsanalysis_qt.update_check import UpdateCheckWorker, show_update_available_dialog
 
 
 def main():
@@ -53,15 +53,18 @@ def main():
     update_worker.start()
     wait_loop.exec()
 
-    # A PhysicsAnalysis update blocks launch entirely — the app never
-    # gets built, just a dialog pointing at where to download the new
-    # version. A PhysicsLibrary update (or "up to date", or nothing
-    # found at all) is only ever a quiet splash status line below.
-    if update_result.get("block"):
-        splash.close()
-        show_update_required_dialog(update_result["message"], update_result["url"])
-        return
-    if update_result.get("status"):
+    # An available PhysicsAnalysis update is a choice, not a wall —
+    # show_update_available_dialog offers "Continue Anyway" (fall through
+    # to a normal launch) alongside "Download Update" (opens the release
+    # page and this process exits instead, so the old version isn't
+    # still running while a new one gets installed over it). A
+    # PhysicsLibrary update (or "up to date", or nothing found at all)
+    # is only ever a quiet splash status line.
+    if update_result.get("outdated"):
+        if not show_update_available_dialog(update_result["message"], update_result["url"]):
+            splash.close()
+            return
+    elif update_result.get("status"):
         splash.set_status(update_result["status"])
     ctx._update_check_worker = update_worker  # keeps it alive if it's still running past the timeout
 

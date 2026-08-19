@@ -2,21 +2,23 @@
 update_check.py
 -----------------
 Checks GitHub for a newer version of PhysicsAnalysis and PhysicsLibrary
-than what's currently running — the same check, the same notice-only
-behavior, whether this is a dev/editable install or a packaged build.
-There's no installer to silently run (this project ships a plain
-onefile exe, no Inno Setup/MSI/etc.), so there's no safe way to
-auto-apply an update without user interaction — the app can only tell
-you one exists and point at where to get it.
+than what's currently running — the same check, the same behavior,
+whether this is a dev/editable install or a packaged build. There's no
+installer to silently run (this project ships a plain onefile exe, no
+Inno Setup/MSI/etc.), so there's no safe way to auto-apply an update
+without user interaction — the app can only tell you one exists and
+point at where to get it.
 
-An available PhysicsAnalysis update blocks launch entirely and shows a
-dialog with a link to the GitHub release page (show_update_required_dialog,
-called from run_qt.py/.pyw before the main window gets built) — running
-an old copy of the app itself isn't something to just note and move
-past. A PhysicsLibrary update is only ever a quiet splash status line:
-it's developed locally alongside this app (and bundled into a packaged
-build, invisible to an end user of one), so drift there is never
-launch-blocking.
+An available PhysicsAnalysis update shows a dialog with a link to the
+GitHub release page (show_update_available_dialog, called from
+run_qt.py/.pyw before the main window gets built) — but it's a choice,
+not a wall: "Continue Anyway" launches the current version normally,
+"Download Update" opens the release page and exits instead (so the old
+version isn't still running while a new one gets installed over it). A
+PhysicsLibrary update is only ever a quiet splash status line: it's
+developed locally alongside this app (and bundled into a packaged
+build, invisible to an end user of one), so it's never worth its own
+dialog.
 
 Neither project reliably uses GitHub Releases (PhysicsLibrary currently
 has none at all), so "latest version" prefers the tag of the repo's
@@ -122,11 +124,12 @@ _PROJECTS = [
 
 class UpdateCheckWorker(QThread):
     """Emits one dict once both checks settle:
-        {"block": True, "message": str, "url": str}
-            — PhysicsAnalysis itself is outdated; caller should refuse
-              to launch and point the user at url.
-        {"block": False, "status": str}
-            — nothing blocking. status is a splash status line: "Up to
+        {"outdated": True, "message": str, "url": str}
+            — PhysicsAnalysis itself is outdated; caller should offer
+              show_update_available_dialog rather than launching straight
+              through.
+        {"outdated": False, "status": str}
+            — nothing to offer. status is a splash status line: "Up to
               date", "PhysicsLibrary update available: vX.Y.Z", or ""
               if every check failed (offline, GitHub unreachable, a
               missing/malformed pyproject.toml) — none of those are the
@@ -151,7 +154,7 @@ class UpdateCheckWorker(QThread):
         analysis = results.get("PhysicsAnalysis")
         if analysis and analysis["outdated"]:
             self.checked.emit({
-                "block": True,
+                "outdated": True,
                 "message": (f"A newer version of Physics Analysis GUI is available "
                             f"(v{analysis['remote']} — you have v{analysis['local']})."),
                 "url": analysis["url"],
@@ -165,21 +168,25 @@ class UpdateCheckWorker(QThread):
             status = "Up to date"
         else:
             status = ""
-        self.checked.emit({"block": False, "status": status})
+        self.checked.emit({"outdated": False, "status": status})
 
 
-def show_update_required_dialog(message, url):
-    """Blocking dialog telling the user PhysicsAnalysis itself is out of
-    date, with a button to open the download link — used to refuse
-    launching the app entirely rather than just noting it and moving on,
-    since running a stale copy of the app itself isn't something to
-    quietly proceed past."""
+def show_update_available_dialog(message, url):
+    """Tells the user PhysicsAnalysis itself is out of date, with a
+    choice rather than a wall: "Download Update" opens the release page
+    and the caller should exit (so this old version isn't still running
+    while a new one gets installed over it); "Continue Anyway" means
+    just launch normally with what's already here. Returns True for
+    "continue with the current version", False for "going to update
+    instead, exit"."""
     box = QMessageBox()
     box.setIcon(QMessageBox.Icon.Information)
     box.setWindowTitle("Update Available")
-    box.setText(f"{message}\n\nPlease download the latest version here:\n{url}")
-    open_btn = box.addButton("Open Download Page", QMessageBox.ButtonRole.ActionRole)
-    box.addButton("Close", QMessageBox.ButtonRole.RejectRole)
+    box.setText(f"{message}\n\nYou can keep using this version, or go download the new one.\n{url}")
+    update_btn = box.addButton("Download Update", QMessageBox.ButtonRole.ActionRole)
+    box.addButton("Continue Anyway", QMessageBox.ButtonRole.AcceptRole)
     box.exec()
-    if box.clickedButton() is open_btn:
+    if box.clickedButton() is update_btn:
         QDesktopServices.openUrl(QUrl(url))
+        return False
+    return True

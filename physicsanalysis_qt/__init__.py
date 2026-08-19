@@ -23,4 +23,4 @@ to each other — see either file's own docstring for why there are two).
 # pyproject.toml on disk to read (see update_check.py's local_version()).
 # Bump this together with pyproject.toml's version field on every release
 # — see Deployment Steps.md.
-__version__ = "2.11.2"
+__version__ = "2.11.3"

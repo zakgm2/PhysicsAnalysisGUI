@@ -112,6 +112,9 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.11.3 | Update check no longer forces a wall — "Continue Anyway" launches the current version, "Download Update" opens the release page and exits |
+| 2.11.2 | Fixed `__version__` not being bumped alongside `pyproject.toml` (caused every fresh install to still think it was out of date); fixed a `packaging/` folder name collision breaking CI's `pip install .` |
+| 2.11.1 | CI-built Windows/macOS executables (GitHub Actions, PyInstaller onefile), attached automatically to a GitHub Release on every version tag push |
 | 2.11.0 | VisPy (OpenGL/GPU-native) added as a third plot engine alongside matplotlib and PyQtGraph, with full interaction parity (rectangle-zoom/pan, markers, legend, hover, decimation, export) |
 | 2.10.0 | Update check now blocks launch entirely for a stale PhysicsAnalysis version (download-link dialog instead of a soft notice); now also checks PhysicsLibrary |
 | 2.9.0 | Loading screen with a GitHub update check, `Launch PhysicsAnalysis.lnk` desktop launcher, splice stacking with a manager dialog, per-note Add Marker grouping, RANSAC inlier-fraction toast, Tick epoc excluded from markers/analysis |

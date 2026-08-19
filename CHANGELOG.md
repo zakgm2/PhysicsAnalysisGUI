@@ -2,6 +2,12 @@
 
 ---
 
+## v2.11.3
+**Changed: Update check no longer forces you to go update**
+- The "a newer version is available" dialog now offers a real choice instead of a wall: **Continue Anyway** launches the current version normally; **Download Update** opens the release page and exits instead (so the old version isn't still running while a new one gets installed over it). Previously the app refused to launch at all once an update was detected, with only a "Close" button that also just quit — see `physicsanalysis_qt/update_check.py`'s `show_update_available_dialog` (renamed from `show_update_required_dialog`).
+
+---
+
 ## v2.11.2
 **Fixed**
 - `physicsanalysis_qt/__init__.py`'s `__version__` (what a packaged build actually reads at runtime — there's no `pyproject.toml` on disk in a frozen exe) hadn't been bumped alongside `pyproject.toml`'s version during the v2.11.1 release, so every freshly-built app still reported itself as the *previous* version and permanently thought a newer release was available no matter how many times you reinstalled "latest" — the update-check comparison was accurate, the baked-in version string it was comparing against just wasn't. Also added explicit `[tool.setuptools.packages.find]` config to `pyproject.toml`: the new `packaging/` directory (README/thank-you files for the distributed zips) collided with setuptools' automatic flat-layout package discovery — it happens to share a name with an actual dependency of this project — causing `pip install .` to fail outright in CI with "Multiple top-level packages discovered."
