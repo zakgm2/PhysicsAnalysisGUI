@@ -2,6 +2,15 @@
 
 ---
 
+## v2.11.1
+**New: CI-built Windows/macOS executables**
+- `.github/workflows/build.yml`: on a version tag push (or manually via the Actions tab), builds a native PyInstaller executable on `windows-latest` and `macos-latest` separately (PyInstaller can't cross-compile) and attaches both to a GitHub Release for that tag.
+- `PhysicsAnalysis.spec` switched to onefile mode — a single `.exe`/`.app` instead of a folder of files, so the Windows build uploads directly with no zip step (macOS still zips its `.app`, since that's an inherently multi-file bundle regardless of onefile/onedir).
+- macOS's `.icns` app icon is generated automatically during the CI build from `icon.png` via `sips`/`iconutil` (no Mac needed locally to produce it).
+- App icon (`icon.png`/`icon.ico`) updated to the actual logo at full resolution (512×512), replacing a placeholder-quality 192×192 version.
+
+---
+
 ## v2.11.0
 **New: VisPy (OpenGL/GPU-native) plot engine — third option alongside matplotlib and PyQtGraph**
 - `Options -> Plot Engine -> VisPy (OpenGL, experimental)` adds a genuinely GPU-native rendering engine for the main plot (`physicsanalysis_qt/vispy_engine.py` + `vispy_interaction.py`, ~950 combined lines). Unlike PyQtGraph — whose 2D line rendering is actually CPU/Qt-painter-based, fast via clever decimation rather than true GPU shading — VisPy renders through OpenGL directly.
