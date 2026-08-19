@@ -20,3 +20,14 @@ dependencies = [
     "vispy==0.16.2",
     "ZaksPhysicsLibrary",
 ]
+
+# Without this, setuptools' flat-layout auto-discovery refuses to guess
+# between physicsanalysis_qt/ and any other top-level directory (e.g.
+# packaging/, added for the distributed-zip README/thank-you files) -
+# "Multiple top-level packages discovered in a flat-layout" - since
+# nothing marks either one as *the* package to build. Being explicit
+# here is also just more correct going forward, independent of this
+# specific collision: new top-level directories (docs/, scripts/,
+# whatever) won't silently break the build again.
+[tool.setuptools.packages.find]
+include = ["physicsanalysis_qt*"]
