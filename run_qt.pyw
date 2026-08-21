@@ -24,7 +24,7 @@ from physicsanalysis_qt.plotting import apply_theme_to_canvas
 from physicsanalysis_qt.splash import SplashScreen, app_icon
 from physicsanalysis_qt.theme import apply_theme
 from physicsanalysis_qt.ui.main_window import build_main_window
-from physicsanalysis_qt.update_check import UpdateCheckWorker, show_update_available_dialog
+from physicsanalysis_qt.update_check import UpdateCheckWorker
 
 
 def main():
@@ -38,37 +38,33 @@ def main():
     splash = SplashScreen()
     splash.show()
     splash.pump()  # let the window manager actually paint it before the blocking setup below
-    splash.set_status("Loading settings...")
 
     ctx = AppState(app)
     apply_theme(app, ctx.settings.get("theme", "light"))
 
-    splash.set_status("Checking for updates...")
     update_worker = UpdateCheckWorker()
     update_result = {}
     update_worker.checked.connect(update_result.update)
     wait_loop = QEventLoop()
     update_worker.checked.connect(wait_loop.quit)
-    QTimer.singleShot(5000, wait_loop.quit)  # don't hold up startup if GitHub is slow/unreachable
+    QTimer.singleShot(5000, wait_loop.quit)  # don't hold up startup if GitHub is slow/unreachable/no internet
     update_worker.start()
     wait_loop.exec()
 
-    # An available PhysicsAnalysis update is a choice, not a wall —
-    # show_update_available_dialog offers "Continue Anyway" (fall through
-    # to a normal launch) alongside "Download Update" (opens the release
-    # page and this process exits instead, so the old version isn't
-    # still running while a new one gets installed over it). A
-    # PhysicsLibrary update (or "up to date", or nothing found at all)
-    # is only ever a quiet splash status line.
+    # An available PhysicsAnalysis update swaps the splash itself into
+    # the message + Download Update / Continue Anyway prompt (see
+    # splash.py's prompt_update) rather than opening a second dialog —
+    # this window is WindowStaysOnTopHint, so a separate QMessageBox
+    # would've opened *behind* it, unreachable. No internet, GitHub
+    # down, or already up to date all land here as a no-op: update_result
+    # only ever has "outdated" set to True after a real successful
+    # comparison against a fetched remote version, never as a fallback
+    # for a failed check — see UpdateCheckWorker's own docstring.
     if update_result.get("outdated"):
-        if not show_update_available_dialog(update_result["message"], update_result["url"]):
-            splash.close()
-            return
-    elif update_result.get("status"):
-        splash.set_status(update_result["status"])
+        if not splash.prompt_update(update_result["message"], update_result["url"]):
+            return  # Download Update was clicked; prompt_update already closed the splash
     ctx._update_check_worker = update_worker  # keeps it alive if it's still running past the timeout
 
-    splash.set_status("Building interface...")
     build_main_window(ctx)
     apply_theme_to_canvas(ctx)
 

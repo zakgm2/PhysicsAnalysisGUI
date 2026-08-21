@@ -2,6 +2,17 @@
 
 ---
 
+## v2.12.1
+**New: Loading screen redesign — just the logo, and the update prompt lives on it too**
+- `physicsanalysis_qt/splash.py`: the loading screen is now just the app logo itself (masked to its own silhouette via `QPixmap.mask()`, not a rectangular card) with a thin black border tracing its outline, instead of the previous dark rounded card.
+- The "a newer version is available" prompt no longer opens as a separate popup — it swaps this same splash window's content in place to a message + **Continue Anyway** / **Download Update** buttons (dark-gray card), plus a small **✕** in the corner for "just close the app, I don't want to update or keep going either."
+- Fixed a real bug in the process: the old popup was a plain `QMessageBox`, and this splash window is always-on-top — so the popup could open *behind* the splash, invisible and unreachable, which is what made an available update feel like the app had hung on "Checking for updates...". One window now, no second popup to get stuck behind anything.
+
+**Fixed**
+- The loading screen briefly flashed on real Windows launches — first traced to `WA_TranslucentBackground` (true per-pixel window transparency), which is known to be unreliable on Windows' compositor for this kind of window; replaced with the older, always-reliable opaque-region window mask instead. A second, smaller flash remained after that (the mask not being picked up until the window's native handle actually existed) — fixed by forcing native window creation before masking, plus fading the window in via `windowOpacity` only once everything's confirmed settled, so nothing ever paints half-formed.
+
+---
+
 ## v2.12.0
 **New: Area Under Curve (AUC) analysis**
 - New "AUC" option in the double-click Analysis dropdown, alongside FFT/Z-Score/Curve Fit (`physicsanalysis_qt/analysis/auc.py`). Oxysoft gets Mean O2Hb/HHb/optional tHb channels, TDT/Generic get whichever signal the Plot dropdown currently shows — same per-source branching as the other click-triggered tools.

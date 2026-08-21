@@ -6,19 +6,17 @@ than what's currently running — the same check, the same behavior,
 whether this is a dev/editable install or a packaged build. There's no
 installer to silently run (this project ships a plain onefile exe, no
 Inno Setup/MSI/etc.), so there's no safe way to auto-apply an update
-without user interaction — the app can only tell you one exists and
-point at where to get it.
+without user interaction — the app can only tell you one exists.
 
-An available PhysicsAnalysis update shows a dialog with a link to the
-GitHub release page (show_update_available_dialog, called from
-run_qt.py/.pyw before the main window gets built) — but it's a choice,
-not a wall: "Continue Anyway" launches the current version normally,
-"Download Update" opens the release page and exits instead (so the old
-version isn't still running while a new one gets installed over it). A
-PhysicsLibrary update is only ever a quiet splash status line: it's
-developed locally alongside this app (and bundled into a packaged
-build, invisible to an end user of one), so it's never worth its own
-dialog.
+Both an available PhysicsAnalysis update and an available PhysicsLibrary
+update are purely a splash status line (UpdateCheckWorker.checked's
+"status") — never a blocking dialog. A modal "Update Available" popup
+used to gate launch here; it's gone now, both because a launch-blocking
+popup is worse than just telling you and moving on, and because a
+QMessageBox whose only buttons are ActionRole/AcceptRole has no button
+Qt can treat as the window's close/Escape action, so its titlebar X
+silently did nothing — a genuinely stuck-feeling dead end, not just an
+annoying one.
 
 Neither project reliably uses GitHub Releases (PhysicsLibrary currently
 has none at all), so "latest version" prefers the tag of the repo's
@@ -36,9 +34,7 @@ import re
 import urllib.error
 import urllib.request
 
-from PyQt6.QtCore import QThread, pyqtSignal, QUrl
-from PyQt6.QtGui import QDesktopServices
-from PyQt6.QtWidgets import QMessageBox
+from PyQt6.QtCore import QThread, pyqtSignal
 from packaging.version import Version
 
 _TIMEOUT_S = 4
@@ -123,19 +119,20 @@ _PROJECTS = [
 
 
 class UpdateCheckWorker(QThread):
-    """Emits one dict once both checks settle:
+    """Emits exactly one dict once the PhysicsAnalysis check settles
+    (PhysicsLibrary is checked too, but only PhysicsAnalysis being
+    outdated is worth surfacing — see the module docstring):
         {"outdated": True, "message": str, "url": str}
-            — PhysicsAnalysis itself is outdated; caller should offer
-              show_update_available_dialog rather than launching straight
-              through.
-        {"outdated": False, "status": str}
-            — nothing to offer. status is a splash status line: "Up to
-              date", "PhysicsLibrary update available: vX.Y.Z", or ""
-              if every check failed (offline, GitHub unreachable, a
-              missing/malformed pyproject.toml) — none of those are the
-              user's fault or actionable from a splash screen, so
-              they're silent rather than shown as an error on every
-              single launch."""
+            — caller should call splash.prompt_update(message, url)
+              instead of launching straight through.
+        {"outdated": False}
+            — nothing to offer, launch normally. This is also exactly
+              what happens with no internet connection at all: every
+              _remote_version() call fails, results stays empty,
+              "outdated" can only ever be True from a *successful*
+              comparison against a real remote version — there's no
+              path from "network request failed" to a false positive
+              here, by construction, not by a separate offline check."""
     checked = pyqtSignal(dict)
 
     def run(self):
@@ -146,6 +143,12 @@ class UpdateCheckWorker(QThread):
                 remote_str, url = _remote_version(repo)
                 remote = Version(remote_str)
             except Exception:
+                # Covers everything from "no internet" (URLError/socket
+                # errors from urlopen) to a missing/malformed
+                # pyproject.toml to a GitHub outage — none of those are
+                # the user's fault or actionable from a splash screen,
+                # so this project is just silently skipped rather than
+                # shown as an error on every single offline launch.
                 continue
             results[display_name] = {
                 "outdated": remote > local, "local": local, "remote": remote, "url": url,
@@ -159,34 +162,5 @@ class UpdateCheckWorker(QThread):
                             f"(v{analysis['remote']} — you have v{analysis['local']})."),
                 "url": analysis["url"],
             })
-            return
-
-        library = results.get("PhysicsLibrary")
-        if library and library["outdated"]:
-            status = f"PhysicsLibrary update available: v{library['remote']}"
-        elif results:
-            status = "Up to date"
         else:
-            status = ""
-        self.checked.emit({"outdated": False, "status": status})
-
-
-def show_update_available_dialog(message, url):
-    """Tells the user PhysicsAnalysis itself is out of date, with a
-    choice rather than a wall: "Download Update" opens the release page
-    and the caller should exit (so this old version isn't still running
-    while a new one gets installed over it); "Continue Anyway" means
-    just launch normally with what's already here. Returns True for
-    "continue with the current version", False for "going to update
-    instead, exit"."""
-    box = QMessageBox()
-    box.setIcon(QMessageBox.Icon.Information)
-    box.setWindowTitle("Update Available")
-    box.setText(f"{message}\n\nYou can keep using this version, or go download the new one.\n{url}")
-    update_btn = box.addButton("Download Update", QMessageBox.ButtonRole.ActionRole)
-    box.addButton("Continue Anyway", QMessageBox.ButtonRole.AcceptRole)
-    box.exec()
-    if box.clickedButton() is update_btn:
-        QDesktopServices.openUrl(QUrl(url))
-        return False
-    return True
+            self.checked.emit({"outdated": False})

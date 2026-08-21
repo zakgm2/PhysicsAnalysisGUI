@@ -112,6 +112,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.12.1 | Loading screen redesign (just the logo, no card), update-available prompt now lives on the splash itself instead of a separate popup, fixed a real bug where that popup could open behind the always-on-top splash and get stuck |
 | 2.12.0 | AUC analysis, Custom Statistics picker, Event PETH "Trials" overlay view, Splice now works on Oxysoft/Generic, RANSAC/Huber/OLS motion-correction choice, Output Folder option, shared export buttons everywhere, marker hit-testing scales with zoom |
 | 2.11.3 | Update check no longer forces a wall — "Continue Anyway" launches the current version, "Download Update" opens the release page and exits |
 | 2.11.2 | Fixed `__version__` not being bumped alongside `pyproject.toml` (caused every fresh install to still think it was out of date); fixed a `packaging/` folder name collision breaking CI's `pip install .` |
