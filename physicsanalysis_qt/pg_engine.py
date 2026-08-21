@@ -21,18 +21,15 @@ the manual _min_max_decimate() from plotting.py — that logic is
 specific to matplotlib's Agg renderer, which has no equivalent built-in.
 """
 
-import os
-
 import numpy as np
 import pyqtgraph as pg
 import pyqtgraph.exporters  # noqa: F401 — registers pg.exporters.ImageExporter
 from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QFileDialog
 
-from .context import get_active_signal
+from .context import export_file, get_active_signal
 from .fonts import scaled_plot_font_sizes
 from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
-from .toasts import show_error, show_window_toast
+from .toasts import show_error
 
 
 class _PanZoomViewBox(pg.ViewBox):
@@ -217,8 +214,15 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
         label_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
     raw_names = []
 
-    def _add_line(x, y, color, width, raw_name):
-        pen = pg.mkPen(color=color, width=width)
+    def _add_line(x, y, color, width, raw_name, alpha=1.0):
+        # alpha values mirror plotting.py's matplotlib engine line-for-line
+        # (0.8 for TDT/overlay traces, 0.5 for Oxysoft per-channel traces,
+        # opaque for Oxysoft means and Generic) so a trace looks the same
+        # regardless of which engine is currently selected.
+        pen_color = pg.mkColor(color)
+        if alpha < 1.0:
+            pen_color.setAlphaF(alpha)
+        pen = pg.mkPen(color=pen_color, width=width)
         item = pg.PlotDataItem(x, y, pen=pen)
         item.setDownsampling(auto=True, method='peak')
         # NOT setClipToView(True): triggers a real pyqtgraph bug (reproduces
@@ -248,8 +252,8 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
         o2hb = cache['o2hb']
         hhb = cache['hhb']
         for i in range(o2hb.shape[0]):
-            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None)
-            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None)
+            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5)
+            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
         _add_line(x, o2hb.mean(axis=0), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
@@ -265,9 +269,14 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
             _add_line(x[mask], y[mask], _GEN_COLORS[i % len(_GEN_COLORS)], 2, col_name)
         y_label, title = "Value", cache['store']
         x_label = cache.get('x_label', 'X')
+    elif cache.get('source') == 'TDT' and ctx.plot_signal == 'overlay_all':
+        for key, sig in cache['signals'].items():
+            _add_line(cache['x'], sig['y'], sig['color'], 1, sig['label'], alpha=0.8)
+        y_label, title = "Amplitude", f"Overlay — {cache['store']}"
+        x_label = "Time (s)"
     else:
         _, label_text, data_to_plot, color = get_active_signal(ctx)
-        _add_line(cache['x'], data_to_plot, color, 1, label_text)
+        _add_line(cache['x'], data_to_plot, color, 1, label_text, alpha=0.8)
         y_label, title = "Amplitude", f"{label_text} — {cache['store']}"
         x_label = "Time (s)"
 
@@ -275,7 +284,7 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
     for m in cache['markers']:
         line = pg.InfiniteLine(
             pos=m['time'], angle=90, movable=False,
-            pen=pg.mkPen(color=m['color'], width=1, style=Qt.PenStyle.DashLine),
+            pen=pg.mkPen(color=m['color'], width=2, style=Qt.PenStyle.DashLine),
             label=marker_display_label(ctx, m),
             labelOpts={'position': 0.95, 'color': m['color'], 'rotateAxis': (1, 0)},
         )
@@ -438,11 +447,9 @@ def pg_export_view(ctx):
     if ctx.cache is None:
         show_error(ctx, "No plot to export.")
         return
-    start_dir = ctx.last_dir or ctx.settings["default_folder"]
-    file_path, _ = QFileDialog.getSaveFileName(
-        ctx.win, "Export View", os.path.join(start_dir, f"{ctx.cache['store']}_view.png"), "PNG (*.png)"
-    )
-    if file_path:
+
+    def _write(path):
         exporter = pg.exporters.ImageExporter(ctx.pg_plot_item)
-        exporter.export(file_path)
-        show_window_toast(ctx, "View Exported")
+        exporter.export(path)
+
+    export_file(ctx, ctx.win, "Export View", f"{ctx.cache['store']}_view.png", "PNG (*.png)", _write)

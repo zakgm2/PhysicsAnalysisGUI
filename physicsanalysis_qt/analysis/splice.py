@@ -25,8 +25,17 @@ every applied splice in order — see remove_splice()/open_splice_manager
 for reviewing or removing one without discarding the rest, and
 restore_full_recording() for discarding all of them at once.
 
-TDT-only for now: Oxysoft/Generic sources have a different cache shape
-(o2hb/hhb/thb arrays, y_columns dict) this doesn't handle yet.
+Works on TDT, Oxysoft, and Generic sources alike — each has a different
+cache shape (TDT: raw/corr + optional per-wavelength 'signals'; Oxysoft:
+2D o2hb/hhb/optional-thb detector arrays; Generic: a y_columns dict of
+1D arrays), so _splice_once branches on ctx.cache['source'] and hands
+PhysicsLibrary's splice_keep_inside/splice_cut_out whichever arrays that
+source actually has via extra_channels (which slices along each array's
+last axis, so a 2D detector array and a 1D column both just work). The
+click-to-anchor capture that drives this (interaction.py, pg_interaction.py,
+vispy_interaction.py) was already source-agnostic — it only ever reads
+two x-coordinates off the plot, never a specific signal's data — so this
+one module was the only place actually restricting splicing to TDT.
 """
 
 import json
@@ -94,8 +103,8 @@ def start_splice_flow(ctx):
     icon — always reopens the mode picker, even if a previous splice
     flow is still mid-click-capture (starting over just discards those
     stray clicks, same as re-picking Curve Fit would)."""
-    if ctx.cache is None or ctx.cache.get('source') != 'TDT':
-        show_error(ctx, "Splicing is only available for TDT data.")
+    if ctx.cache is None or ctx.cache.get('source') not in ('TDT', 'Oxysoft', 'Generic'):
+        show_error(ctx, "Splicing isn't available for this data type.")
         return False
 
     dlg = _SpliceModePickerDialog(ctx.win, ctx)
@@ -114,37 +123,91 @@ def _splice_once(source_cache, mode, start, end):
     new spliced cache dict, or None if the range isn't usable. No ctx
     mutation, no toast/redraw — shared by _apply_splice (one interactive
     step) and remove_splice/load_splice_from_sidecar (replaying several
-    steps in a row from the pristine original)."""
+    steps in a row from the pristine original).
+
+    Branches on the cache's source since each one carries the actual
+    signal in different keys — see the module docstring. All three paths
+    funnel every source-specific array through PhysicsLibrary's
+    extra_channels (sliced along each array's own last axis, so Oxysoft's
+    2D per-detector arrays and Generic's 1D columns both just work) so
+    the trim/cut-and-stitch math itself lives in exactly one place."""
     splice_fn = pl.splice_cut_out if mode == MODE_CUT_OUT else pl.splice_keep_inside
+    source = source_cache.get('source')
+    x = source_cache['x']
+    markers = source_cache['markers']
+    detected_markers = source_cache.get('detected_markers', [])
 
-    # The Plot dropdown's raw per-wavelength channels (main driver,
-    # isosbestic, ...) are sample-aligned with x/raw/corr and must be
-    # trimmed/cut identically or they'd end up the wrong length (and
-    # showing the wrong span of samples) after this splice — 'normalized'
-    # is excluded since it's already the freshly-spliced 'corr' below.
-    source_signals = source_cache.get('signals', {})
-    extra_channels = {k: sig['y'] for k, sig in source_signals.items() if k != 'normalized'}
+    if source == 'TDT':
+        # The Plot dropdown's raw per-wavelength channels (main driver,
+        # isosbestic, ...) are sample-aligned with x/raw/corr and must be
+        # trimmed/cut identically or they'd end up the wrong length (and
+        # showing the wrong span of samples) after this splice —
+        # 'normalized' is excluded since it's already the freshly-spliced
+        # 'corr' below.
+        source_signals = source_cache.get('signals', {})
+        extra_channels = {k: sig['y'] for k, sig in source_signals.items() if k != 'normalized'}
 
-    result = splice_fn(
-        source_cache['x'], source_cache['raw'], source_cache['corr'],
-        source_cache['markers'], source_cache.get('detected_markers', []),
-        start, end, extra_channels=extra_channels,
-    )
-    if result is None:
-        return None
+        result = splice_fn(x, source_cache['raw'], source_cache['corr'],
+                            markers, detected_markers, start, end, extra_channels=extra_channels)
+        if result is None:
+            return None
 
-    spliced = dict(source_cache)
-    spliced['x'] = result['x']
-    spliced['raw'] = result['raw']
-    spliced['corr'] = result['corr']
-    spliced['markers'] = result['markers']
-    spliced['detected_markers'] = result['detected_markers']
-    if source_signals:
-        spliced['signals'] = {
-            key: {**sig, 'y': result['corr'] if key == 'normalized' else result['extra_channels'][key]}
-            for key, sig in source_signals.items()
-        }
-    return spliced
+        spliced = dict(source_cache)
+        spliced['x'] = result['x']
+        spliced['raw'] = result['raw']
+        spliced['corr'] = result['corr']
+        spliced['markers'] = result['markers']
+        spliced['detected_markers'] = result['detected_markers']
+        if source_signals:
+            spliced['signals'] = {
+                key: {**sig, 'y': result['corr'] if key == 'normalized' else result['extra_channels'][key]}
+                for key, sig in source_signals.items()
+            }
+        return spliced
+
+    if source == 'Oxysoft':
+        # No single raw/corr pair here — the detector arrays (each shape
+        # (n_channels, n_samples)) ARE the signal, so they go through
+        # extra_channels instead; x is passed as a throwaway raw/corr
+        # placeholder since the function requires something 1D there,
+        # but result['raw']/['corr'] are never read back out below.
+        extra_channels = {'o2hb': source_cache['o2hb'], 'hhb': source_cache['hhb']}
+        if 'thb' in source_cache:
+            extra_channels['thb'] = source_cache['thb']
+
+        result = splice_fn(x, x, x, markers, detected_markers, start, end,
+                            extra_channels=extra_channels)
+        if result is None:
+            return None
+
+        spliced = dict(source_cache)
+        spliced['x'] = result['x']
+        spliced['o2hb'] = result['extra_channels']['o2hb']
+        spliced['hhb'] = result['extra_channels']['hhb']
+        if 'thb' in source_cache:
+            spliced['thb'] = result['extra_channels']['thb']
+        spliced['markers'] = result['markers']
+        spliced['detected_markers'] = result['detected_markers']
+        return spliced
+
+    if source == 'Generic':
+        # y_columns are the signal(s) — same throwaway-placeholder
+        # reasoning as Oxysoft above for the required raw/corr args.
+        extra_channels = dict(source_cache['y_columns'])
+
+        result = splice_fn(x, x, x, markers, detected_markers, start, end,
+                            extra_channels=extra_channels)
+        if result is None:
+            return None
+
+        spliced = dict(source_cache)
+        spliced['x'] = result['x']
+        spliced['y_columns'] = result['extra_channels']
+        spliced['markers'] = result['markers']
+        spliced['detected_markers'] = result['detected_markers']
+        return spliced
+
+    return None
 
 
 def _spliced_store_name(base_name, splices):

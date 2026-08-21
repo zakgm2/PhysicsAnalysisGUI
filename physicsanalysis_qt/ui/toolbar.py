@@ -2,14 +2,18 @@
 ui/toolbar.py
 ---------------
 Builds the top toolbar: Open menu, analysis mode dropdown, view
-controls. Grid visibility lives in the Edit Attributes dialog
-(attributes.py); Add Marker, Splice, and Save Markers live in the left
-icon sidebar (edit_toolbar.py), not here.
+controls, and (pushed to the far right via a stretch, so it sits in the
+window's top-right corner) the Options gear icon. Grid visibility lives
+in the Edit Attributes dialog (attributes.py); Add Marker, Splice, Save
+Markers, and Measure Intervals live in the left icon sidebar
+(edit_toolbar.py), not here.
 """
 
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QPushButton, QMenu, QLabel,
-    QComboBox,
+    QComboBox, QToolButton,
 )
 
 from ..loaders.tdt import open_folder, reload_folder
@@ -23,11 +27,9 @@ from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
 from ..analysis.window_settings import init_window_settings, open_window_dialog, _window_button_text
-from ..analysis.intervals import launch_intervals
 from ..analysis.text_field_study import launch_field_study_results
 from ..analysis.field_study_validation import launch_field_study_validation
-from ..analysis.event_peth import launch_event_peth
-from ..analysis.peak_finder import launch_peak_finder
+from ..analysis.custom_statistics import launch_custom_statistics
 
 
 def _reload_current(ctx):
@@ -92,23 +94,12 @@ def build_toolbar(ctx):
 
     layout.addWidget(QLabel("|"))
 
-    analysis_menu_btn = QPushButton("Advanced Analysis ▾")
-    analysis_menu = QMenu(analysis_menu_btn)
-    act_event_peth = analysis_menu.addAction(
-        "Event PETH (Z-score all occurrences)…", lambda: launch_event_peth(ctx))
-    act_event_peth.setToolTip("Pick an event/marker name — Z-scores every occurrence of it "
-                               "against its own baseline, stacks them as a heatmap, and plots "
-                               "the trial-averaged trace, so you can check consistency across trials.")
-    act_find_peaks = analysis_menu.addAction(
-        "Find Significant Peaks…", lambda: launch_peak_finder(ctx))
-    act_find_peaks.setToolTip("Check every event type at once for an aligned neural peak (or "
-                               "scan the whole recording blind) — see a summary of which event "
-                               "types actually line up with a real response before adding anything.")
-    analysis_menu_btn.setMenu(analysis_menu)
-    layout.addWidget(analysis_menu_btn)
+    btn_custom_stats = QPushButton("Custom Statistics")
+    btn_custom_stats.clicked.connect(lambda: launch_custom_statistics(ctx))
+    layout.addWidget(btn_custom_stats)
 
     ctx.plot_type_combo = QComboBox()
-    ctx.plot_type_combo.addItems(["Analysis", "Z-Score PETH", "FFT", "Curve Fit"])
+    ctx.plot_type_combo.addItems(["Analysis", "Z-Score", "FFT", "AUC", "Curve Fit"])
     layout.addWidget(ctx.plot_type_combo)
 
     layout.addWidget(build_plot_signal_control(ctx))
@@ -120,12 +111,6 @@ def build_toolbar(ctx):
 
     layout.addWidget(QLabel("|"))
 
-    btn_intervals = QPushButton("Measure Intervals")
-    btn_intervals.clicked.connect(lambda: launch_intervals(ctx))
-    layout.addWidget(btn_intervals)
-
-    layout.addWidget(QLabel("|"))
-
     btn_export_view = QPushButton("Export View (PNG/PDF)")
     btn_export_view.clicked.connect(lambda: export_canvas_action(ctx))
     layout.addWidget(btn_export_view)
@@ -134,11 +119,21 @@ def build_toolbar(ctx):
     btn_edit_attrs.clicked.connect(lambda: open_attributes_window(ctx))
     layout.addWidget(btn_edit_attrs)
 
-    layout.addWidget(QLabel("|"))
+    layout.addStretch(1)
 
-    btn_options = QPushButton("Options")
+    # Gear icon, pushed to the far right by the stretch above so it sits
+    # in the window's top-right corner — deliberately sized larger than
+    # a normal toolbar button (this row's height is otherwise ~30px) so
+    # it reads clearly as its own thing, not just another button in the
+    # row.
+    btn_options = QToolButton()
+    btn_options.setText("⚙")  # ⚙
+    btn_options.setFont(QFont("Segoe UI Emoji", 20))
+    btn_options.setFixedSize(40, 40)
+    btn_options.setToolTip("Options")
+    btn_options.setAutoRaise(True)
+    btn_options.setCursor(Qt.CursorShape.PointingHandCursor)
     btn_options.clicked.connect(lambda: open_options_dialog(ctx))
     layout.addWidget(btn_options)
 
-    layout.addStretch(1)
     return toolbar

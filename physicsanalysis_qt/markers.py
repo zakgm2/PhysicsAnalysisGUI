@@ -653,6 +653,17 @@ def place_marker(ctx, t):
     simple_plot(ctx)
 
 
+MARKER_HIT_PX = 5  # "near a marker" hit-test radius, in on-screen pixels — see
+# each engine's own _marker_hit_tolerance() (interaction.py / pg_interaction.py /
+# vispy_interaction.py) for how this gets converted to data-space seconds from
+# the *current* view range, so it stays a constant 5px regardless of zoom
+# level. Chosen to match how the old fixed 2.0s tolerance actually felt on
+# real recordings (~1-3px at typical 600-1800s recording lengths, at default
+# full-recording zoom) rather than the ~10px a generic UI-hit-target guess
+# would suggest. tol_s's 2.0 default below only matters for a caller that
+# doesn't bother computing a real one (there shouldn't be any left).
+
+
 def find_nearest_marker(ctx, t, tol_s=2.0):
     if ctx.cache is None or not ctx.cache['markers']:
         return None
@@ -720,12 +731,12 @@ def delete_all_same_name(ctx, marker):
     return before - len(ctx.cache['markers'])
 
 
-def right_click_marker_menu(ctx, xdata, global_pos):
+def right_click_marker_menu(ctx, xdata, global_pos, tol_s=2.0):
     from .marker_labels import marker_display_label
     from .plotting import simple_plot
     if ctx.cache is None or xdata is None:
         return
-    idx = find_nearest_marker(ctx, xdata)
+    idx = find_nearest_marker(ctx, xdata, tol_s)
     if idx is None:
         return
     marker = ctx.cache['markers'][idx]

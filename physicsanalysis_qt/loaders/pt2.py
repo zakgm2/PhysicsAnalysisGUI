@@ -13,8 +13,9 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox
 
 import PhysicsLibrary as pl
 
+from ..context import export_file
 from ..fonts import fig_font_sizes
-from ..toasts import show_error, show_window_toast
+from ..toasts import show_error
 
 
 class PT2ViewerDialog(QDialog):
@@ -69,13 +70,8 @@ class PT2ViewerDialog(QDialog):
     def _export(self):
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M")
         name = f"{os.path.splitext(os.path.basename(self.path))[0]}_{ts}.png"
-        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
-        dst, _ = QFileDialog.getSaveFileName(
-            self, "Export Image", os.path.join(start_dir, name), "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
-        )
-        if dst:
-            self.fig2.savefig(dst, dpi=300, bbox_inches='tight')
-            show_window_toast(self.ctx, f"Exported: {os.path.basename(dst)}")
+        export_file(self.ctx, self, "Export Image", name, "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)",
+                    lambda path: self.fig2.savefig(path, dpi=300, bbox_inches='tight'))
 
 
 def launch_pt2_viewer(ctx):

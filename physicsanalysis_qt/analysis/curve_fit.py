@@ -2,29 +2,27 @@
 analysis/curve_fit.py
 ------------------------
 Curve Fit dialog: two anchor points on the main plot define a segment,
-fit any registered model to it, view R^2/params, export CSV or copy to
-clipboard, export the fit plot.
+fit any registered model to it, view R^2/params. Copy/Export CSV go
+through dispatch.py's shared add_stats_export_buttons (same as AUC/FFT/
+Z-Score/Event PETH), and Export Plot through the shared
+export_figure_to_file — this dialog is actually where that Copy/CSV
+pattern originated, but had drifted to its own hand-rolled copy; now
+back on the shared implementation.
 """
-
-import csv
-import datetime
-import os
 
 import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
-    QLineEdit, QFrame, QFileDialog, QApplication,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit, QFrame,
 )
 
 import PhysicsLibrary as pl
 
 from ..context import get_active_signal
 from ..fonts import fig_font_sizes
-from ..toasts import show_error, show_window_toast
-from .dispatch import get_window, export_figure_to_file
+from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
 from .models_registry import CURVE_FIT_MODELS
 
 
@@ -49,32 +47,37 @@ class CurveFitDialog(QDialog):
         cache = ctx.cache
         self.x_data = cache['x']
         self.raw_channel_data = {}
-        if 'o2hb' in cache and 'hhb' in cache:
+        if cache.get('source') == 'Oxysoft':
             self.raw_channel_data['Mean O2Hb'] = {
-                'y': cache['o2hb'].mean(axis=0) if cache['o2hb'].ndim > 1 else cache['o2hb'],
+                'y': pl.mean_channels(cache['o2hb']),
                 'color': '#CC0000',
             }
             self.raw_channel_data['Mean HHb'] = {
-                'y': cache['hhb'].mean(axis=0) if cache['hhb'].ndim > 1 else cache['hhb'],
+                'y': pl.mean_channels(cache['hhb']),
                 'color': '#0033CC',
             }
             if 'thb' in cache:
                 self.raw_channel_data['Mean tHb'] = {
-                    'y': cache['thb'].mean(axis=0) if cache['thb'].ndim > 1 else cache['thb'],
+                    'y': pl.mean_channels(cache['thb']),
                     'color': '#228B22',
                 }
-        elif 'signals' in cache:
-            # TDT: fit whichever signal the Plot dropdown currently shows
-            # (Normalized/Isosbestic/Main Driver/...), same as the main
-            # plot and every other TDT analysis dialog.
+        elif 'corr' in cache or 'raw' in cache:
+            # TDT (and any other single-signal cache carrying corr/raw) —
+            # whichever signal the Plot dropdown currently shows — same as
+            # the main plot and every other generic/double-click analysis
+            # tool (FFT, Z-Score, AUC). Only the dataset-specific tools
+            # under Custom Statistics (Event PETH, Peak Finder) always use
+            # the normalized signal regardless of what's displayed.
             _, label, y, color = get_active_signal(ctx)
             self.raw_channel_data[label] = {'y': y, 'color': color}
         else:
-            # Generic source: no 'signals' map, just whatever single
-            # column-derived array this cache carries.
-            sig = cache.get('corr', cache.get('raw'))
-            lbl = 'dF/F (corrected)' if 'corr' in cache else 'Raw signal'
-            self.raw_channel_data[lbl] = {'y': sig, 'color': '#2196F3'}
+            # Generic source: no 'signals'/'corr'/'raw' — same first-column
+            # fallback FFT/AUC use for a Generic multi-column file. (The
+            # previous cache.get('corr', cache.get('raw')) here always
+            # returned None for a Generic file, which has neither key —
+            # Curve Fit was silently broken for Generic sources until this.)
+            y = next(iter(cache['y_columns'].values()))
+            self.raw_channel_data['Signal'] = {'y': y, 'color': '#2196F3'}
 
         layout = QVBoxLayout(self)
 
@@ -110,16 +113,19 @@ class CurveFitDialog(QDialog):
         layout.addWidget(self.sub_canvas, stretch=1)
 
         btn_row = QHBoxLayout()
-        btn_copy = QPushButton("Copy")
-        btn_copy.clicked.connect(self._copy_params)
-        btn_csv = QPushButton("Export CSV")
-        btn_csv.clicked.connect(self._export_csv)
+        add_stats_export_buttons(
+            ctx, self, btn_row,
+            get_clipboard_text=lambda: self.result_lbl.text(),
+            csv_default_name=lambda: f"CurveFit_{ctx.cache['store']}",
+            csv_header=["Channel", "Model", "Parameter", "Value", "R2", "t1 (s)", "t2 (s)", "dt (s)"],
+            get_csv_rows=self._csv_rows,
+        )
         btn_plot = QPushButton("Export Plot")
         btn_plot.clicked.connect(lambda: export_figure_to_file(ctx, self.sub_fig, "CurveFit"))
+        btn_row.addWidget(btn_plot)
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.reject)
-        for b in (btn_copy, btn_csv, btn_plot, btn_close):
-            btn_row.addWidget(b)
+        btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
         self._run_fit()
@@ -215,36 +221,13 @@ class CurveFitDialog(QDialog):
         self.result_lbl.setText(divider.join(lines_text) or "No data found.")
         self.last_fit_results = fit_rows
 
-    def _copy_params(self):
-        txt = self.result_lbl.text()
-        if not txt or txt == "Results will appear here after fitting.":
-            return
-        QApplication.clipboard().setText(txt)
-        show_window_toast(self.ctx, "Parameters copied to clipboard")
-
-    def _export_csv(self):
-        if not self.last_fit_results:
-            show_error(self.ctx, "Run the fit first.")
-            return
-        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export fit parameters", os.path.join(start_dir, f"CurveFit_{ts}.csv"),
-            "CSV (*.csv);;Text (*.txt)"
-        )
-        if not path:
-            return
-        with open(path, 'w', newline='', encoding='utf-8') as fh:
-            writer = csv.writer(fh)
-            writer.writerow(["Channel", "Model", "Parameter", "Value", "R2",
-                              "t1 (s)", "t2 (s)", "dt (s)"])
-            for row in self.last_fit_results:
-                for pname, pval in zip(row["param_names"], row["param_values"]):
-                    writer.writerow([row["channel"], row["model"], pname,
-                                      f"{pval:.6g}", f"{row['r2']:.4f}",
-                                      f"{row['t1']:.4f}", f"{row['t2']:.4f}",
-                                      f"{row['t2'] - row['t1']:.4f}"])
-        show_window_toast(self.ctx, f"Saved {os.path.basename(path)}")
+    def _csv_rows(self):
+        rows = []
+        for row in self.last_fit_results:
+            for pname, pval in zip(row["param_names"], row["param_values"]):
+                rows.append([row["channel"], row["model"], pname, f"{pval:.6g}", f"{row['r2']:.4f}",
+                             f"{row['t1']:.4f}", f"{row['t2']:.4f}", f"{row['t2'] - row['t1']:.4f}"])
+        return rows
 
 
 def launch_curve_fit(ctx, source_line, p1_tuple, p2_tuple):

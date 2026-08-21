@@ -42,7 +42,7 @@ def _on_changed(ctx):
     if ctx.cache is None:
         return
 
-    if ctx.settings.get("plot_engine") == "pyqtgraph":
+    if key != "overlay_all" and ctx.settings.get("plot_engine") == "pyqtgraph":
         # Swap the line's data in place instead of a full pg_simple_plot()
         # clear()+rebuild — see pg_update_active_signal's docstring: the
         # rebuild briefly shows an intermediate frame that Qt can paint as
@@ -81,6 +81,8 @@ def refresh_plot_signal_options(ctx):
     combo.clear()
     for key, sig in signals.items():
         combo.addItem(sig['label'], key)
+    if cache.get('source') == 'TDT':
+        combo.addItem("Overlay All", "overlay_all")
     idx = combo.findData(ctx.plot_signal)
     combo.setCurrentIndex(idx if idx >= 0 else 0)
     ctx.plot_signal = combo.currentData()

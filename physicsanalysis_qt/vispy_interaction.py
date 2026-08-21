@@ -24,11 +24,23 @@ from PyQt6.QtWidgets import QMenu
 from vispy import scene
 from vispy.scene.cameras import PanZoomCamera
 
-from .markers import place_marker, find_nearest_marker, open_edit_marker_dialog
+from .markers import MARKER_HIT_PX, place_marker, find_nearest_marker, open_edit_marker_dialog
 from .pg_interaction import _nearest_index
 from .toasts import show_error, show_window_toast
 
 _MIN_DRAG_PX = 5  # below this, a press+release pair counts as a click, not a drag
+
+
+def _marker_hit_tolerance(ctx):
+    """MARKER_HIT_PX on-screen pixels -> data-space seconds under the
+    current camera view, so the hit-test radius around a marker stays a
+    constant size on screen instead of ballooning at high zoom — see
+    interaction.py's own copy of this for the matplotlib engine. Reuses
+    _map_to_data rather than the camera rect directly since that's the
+    already-verified pixel->data mapping this module uses everywhere else."""
+    x0, _ = _map_to_data(ctx, (0, 0))
+    x1, _ = _map_to_data(ctx, (MARKER_HIT_PX, 0))
+    return abs(x1 - x0)
 
 
 class RectZoomPanCamera(PanZoomCamera):
@@ -186,12 +198,13 @@ def _handle_click(ctx, x, y, button, is_double, screen_pos):
         if button == 1:
             place_marker(ctx, x)
         elif button == 2:
-            _right_click_marker_menu(ctx, x, screen_pos)
+            _right_click_marker_menu(ctx, x, screen_pos, _marker_hit_tolerance(ctx))
         return
 
     if button == 2:
-        if find_nearest_marker(ctx, x) is not None:
-            _right_click_marker_menu(ctx, x, screen_pos)
+        tol_s = _marker_hit_tolerance(ctx)
+        if find_nearest_marker(ctx, x, tol_s) is not None:
+            _right_click_marker_menu(ctx, x, screen_pos, tol_s)
         return
 
     if ctx.plot_type_combo.currentText() == "Curve Fit" and button == 1:
@@ -240,7 +253,7 @@ def on_vispy_mouse_released(ctx, event):
         return
     dx = event.pos[0] - press_pos[0]
     dy = event.pos[1] - press_pos[1]
-    if (dx * dx + dy * dy) ** 0.5 > 5:
+    if (dx * dx + dy * dy) ** 0.5 > _MIN_DRAG_PX:
         return  # a real drag (rect-zoom/pan) already handled by the camera, not a click
 
     x, y = _map_to_data(ctx, event.pos)
@@ -256,13 +269,13 @@ def on_vispy_mouse_double_clicked(ctx, event):
     _handle_click(ctx, x, y, event.button, is_double=True, screen_pos=screen_pos)
 
 
-def _right_click_marker_menu(ctx, xdata, global_pos):
+def _right_click_marker_menu(ctx, xdata, global_pos, tol_s=2.0):
     from .vispy_engine import vispy_simple_plot
     from .marker_labels import marker_display_label
     from .markers import delete_all_same_name
     from .toasts import show_success
 
-    idx = find_nearest_marker(ctx, xdata)
+    idx = find_nearest_marker(ctx, xdata, tol_s)
     if idx is None:
         return
     marker = ctx.cache['markers'][idx]

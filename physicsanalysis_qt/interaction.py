@@ -15,8 +15,24 @@ from PyQt6.QtWidgets import QInputDialog
 _PAN_MIN_FRAME_INTERVAL = 1 / 30  # cap pan redraws at ~30 fps
 
 from . import plotting
-from .markers import place_marker, find_nearest_marker, right_click_marker_menu
+from .markers import MARKER_HIT_PX, place_marker, find_nearest_marker, right_click_marker_menu
 from .toasts import show_error, show_window_toast
+
+
+def _marker_hit_tolerance(ctx):
+    """MARKER_HIT_PX on-screen pixels, converted to data-space seconds using
+    the axes' *current* view — a fixed-seconds tolerance would swallow far
+    more of the visible plot at high zoom than at low zoom, which is what
+    made right-click-to-pan near a marker nearly impossible once zoomed in
+    (the marker-menu check fires on button *press*, before panning even
+    starts, so it doesn't get a chance to distinguish a click from a drag
+    the way the PyQtGraph/VisPy engines' click-vs-drag checks already do)."""
+    ax = ctx.ax
+    bbox = ax.get_window_extent()
+    if bbox.width <= 0:
+        return 2.0
+    xlim = ax.get_xlim()
+    return MARKER_HIT_PX * (xlim[1] - xlim[0]) / bbox.width
 
 
 def on_select(ctx, eclick, erelease):
@@ -165,13 +181,14 @@ def on_press(ctx, event):
         if event.button == 1 and not event.dblclick and event.xdata is not None:
             place_marker(ctx, event.xdata)
         elif event.button == 3 and event.xdata is not None:
-            right_click_marker_menu(ctx, event.xdata, QCursor.pos())
+            right_click_marker_menu(ctx, event.xdata, QCursor.pos(), _marker_hit_tolerance(ctx))
         return
 
     # Right-click: marker context menu if near one, else pan
     if event.button == 3:
-        if event.xdata is not None and find_nearest_marker(ctx, event.xdata) is not None:
-            right_click_marker_menu(ctx, event.xdata, QCursor.pos())
+        tol_s = _marker_hit_tolerance(ctx)
+        if event.xdata is not None and find_nearest_marker(ctx, event.xdata, tol_s) is not None:
+            right_click_marker_menu(ctx, event.xdata, QCursor.pos(), tol_s)
         else:
             ctx.is_dragging = True
             ctx.press_x, ctx.press_y = event.x, event.y

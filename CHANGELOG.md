@@ -2,6 +2,46 @@
 
 ---
 
+## v2.12.0
+**New: Area Under Curve (AUC) analysis**
+- New "AUC" option in the double-click Analysis dropdown, alongside FFT/Z-Score/Curve Fit (`physicsanalysis_qt/analysis/auc.py`). Oxysoft gets Mean O2Hb/HHb/optional tHb channels, TDT/Generic get whichever signal the Plot dropdown currently shows — same per-source branching as the other click-triggered tools.
+
+**New: Custom Statistics picker window**
+- Replaces the old "Advanced Analysis ▾" toolbar menu (`physicsanalysis_qt/analysis/custom_statistics.py`). Lists dataset-specific tools (Event PETH, Find Significant Peaks) that each declare which source type they need, so a dataset with no applicable tool says so explicitly instead of the menu just not showing anything.
+
+**New: Event PETH "Trials" view**
+- A 5th mutually-exclusive toggle alongside Z-Score/AUC/Peak/Bins: overlays every checked trial's individual z-score trace directly (no mean, no SEM band), each trial colored from a 15-color cycling palette so trial-to-trial shape/timing is visible without collapsing into one average. Has its own matching CSV export (one row per trial per timepoint).
+
+**New: Splice Recording now works on Oxysoft and Generic sources, not just TDT**
+- `analysis/splice.py`'s `_splice_once` now branches per `cache['source']` and routes every source's arrays — Oxysoft's 2D per-detector channels, Generic's 1D columns — through PhysicsLibrary's now axis-agnostic `extra_channels` slicing. The click-to-anchor capture driving this was already source-agnostic; this module was the only actual blocker.
+
+**New: Motion-correction regression method is now a real choice**
+- Options → Motion Correction (TDT): pick RANSAC (default, excludes severe artifacts entirely), Huber (downweights outliers instead of excluding them), or OLS (plain least-squares, no robustness) for the 415-vs-465 isosbestic regression — previously hardcoded to RANSAC. Takes effect on the next TDT folder load/reload.
+
+**New: Status bar — APA citation, feedback, and coffee buttons**
+- `❝ APA Citation` copies a ready-made APA 7 software citation for this app to the clipboard, for anyone citing it in a paper. `🐞` opens this repo's GitHub issues page for bug reports/feedback. `☕` opens [buymeacoffee.com/zakgm2](https://buymeacoffee.com/zakgm2). All three live in the status bar's bottom-right corner, in that left-to-right order.
+
+**New: Output Folder option**
+- Options → Folders → Output folder: pin every CSV/PNG/PDF/SVG export to a specific folder — skips the save dialog entirely and just saves there with a confirmation toast. Leave blank to keep the previous behavior (follows wherever you last opened a file from).
+
+**Changed**
+- Every stats-bearing analysis dialog (AUC, FFT, Z-Score, Event PETH, Peak Finder's alignment/scan results) now shares one Copy + Export CSV button pair (`analysis/dispatch.py`'s new `add_stats_export_buttons`) instead of five near-identical hand-rolled copies — Peak Finder's results dialogs gained CSV export for the first time as a result.
+- Every export path across the app (figures and CSVs — Curve Fit, FFT, AUC, PETH, Event PETH, Intervals, PT2, Text Field Study, Statistical Validation) now goes through one shared `export_file()` (`context.py`) — respects the new Output Folder setting uniformly and always ends with a "Saved …" toast.
+- FFT and Z-Score windows migrated to the same per-source channel-list pattern AUC/Curve Fit already used — Oxysoft's optional tHb channel, previously only available in AUC/Curve Fit, now shows up in FFT and Z-Score too.
+- Peak Finder's alignment/scan tools now always analyze the normalized signal (`get_normalized_signal`) regardless of what the main plot's Plot dropdown currently shows — matching Event PETH's existing behavior, since these are dataset-specific "Custom Statistics" tools rather than generic click-analyze ones.
+- Trace opacity is now consistent across all three plot engines — PyQtGraph and VisPy previously drew every trace fully opaque while matplotlib varied by trace type (0.8 for TDT/overlay traces, 0.5 for Oxysoft per-channel traces, opaque for means/Generic); both engines now match matplotlib's values exactly.
+- New "Overlay All" entry in the TDT Plot-signal dropdown shows every per-wavelength signal at once on the main plot, on all 3 engines.
+- Marker hit-testing (right-click menu, click detection) now scales with zoom — a constant ~5px on-screen radius converted to data-space seconds from the current view, instead of a fixed 2-second tolerance that made right-click-to-pan near a marker nearly impossible once zoomed in.
+- Measure Intervals moved from the top toolbar into the left icon sidebar (📏 ruler icon), alongside Rescale/Add Marker/Splice/Save/Undo.
+- `PhysicsLibrary`'s shared helpers (`compute_group_stats`, `estimate_sample_rate`, `compute_marker_intervals`) now back Event PETH's group mean/SEM, the Generic loader's sample-rate estimate, and Measure Intervals' computation, replacing formulas that were previously duplicated at each call site.
+
+**Fixed**
+- FFT exports were silently overwriting the same file every time (no timestamp in the filename) — now match every other export's `HHMMSS`-suffixed naming.
+- Curve Fit's Generic-source branch was silently broken: its cache-key fallback always evaluated to `None` for any Generic/Excel/CSV/TSV file (those caches have no `corr`/`raw` keys, only `y_columns`), so Curve Fit never actually worked on Generic sources. Found and fixed while aligning its per-source branching with AUC/FFT/PETH's.
+- VisPy's click-vs-drag threshold hardcoded `5` at one call site instead of referencing the shared `_MIN_DRAG_PX` constant already used everywhere else in the same file.
+
+---
+
 ## v2.11.3
 **Changed: Update check no longer forces you to go update**
 - The "a newer version is available" dialog now offers a real choice instead of a wall: **Continue Anyway** launches the current version normally; **Download Update** opens the release page and exits instead (so the old version isn't still running while a new one gets installed over it). Previously the app refused to launch at all once an update was detected, with only a "Close" button that also just quit — see `physicsanalysis_qt/update_check.py`'s `show_update_available_dialog` (renamed from `show_update_required_dialog`).

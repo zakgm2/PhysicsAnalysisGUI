@@ -46,19 +46,18 @@ engine, same as for PyQtGraph — they're cache-driven pop-up figures,
 not tied to any live visual objects this engine owns.
 """
 
-import os
-
 import numpy as np
 from PyQt6.QtCore import QEvent, QObject
 from PyQt6.QtGui import QImage, QPainter
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFileDialog
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from vispy import scene
+from vispy.color import Color
 
-from .context import get_active_signal
+from .context import export_file, get_active_signal
 from .fonts import main_plot_scale, scaled_plot_font_sizes
 from .marker_labels import marker_display_label
 from .plotting import _min_max_decimate
-from .toasts import show_error, show_window_toast
+from .toasts import show_error
 
 
 class _LegendRepositioner(QObject):
@@ -194,9 +193,14 @@ def vispy_simple_plot(ctx):
     legend_info = []  # (color, raw_name) for whichever lines are legend-eligible
     max_points = ctx.settings.get("decimate_max_points", 2000)
 
-    def _add_line(x, y, color, width, raw_name):
+    def _add_line(x, y, color, width, raw_name, alpha=1.0):
+        # alpha values mirror plotting.py's matplotlib engine line-for-line
+        # (0.8 for TDT/overlay traces, 0.5 for Oxysoft per-channel traces,
+        # opaque for Oxysoft means and Generic) so a trace looks the same
+        # regardless of which engine is currently selected.
         dx, dy = _min_max_decimate(x, y, decimate_xlim, max_points=max_points)
-        line = scene.Line(pos=_xy(dx, dy), color=color, width=width, parent=view.scene)
+        line_color = Color(color, alpha=alpha) if alpha < 1.0 else color
+        line = scene.Line(pos=_xy(dx, dy), color=line_color, width=width, parent=view.scene)
         ctx.vispy_line_visuals.append((line, x, y, raw_name))  # full-res, for hover/click
         if raw_name is not None:
             legend_info.append((color, raw_name))
@@ -207,8 +211,8 @@ def vispy_simple_plot(ctx):
         o2hb = cache['o2hb']
         hhb = cache['hhb']
         for i in range(o2hb.shape[0]):
-            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None)
-            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None)
+            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5)
+            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
         _add_line(x, o2hb.mean(axis=0), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
@@ -224,9 +228,14 @@ def vispy_simple_plot(ctx):
             _add_line(x[mask], y[mask], _GEN_COLORS[i % len(_GEN_COLORS)], 2, col_name)
         y_label, title_text = "Value", cache['store']
         x_label = cache.get('x_label', 'X')
+    elif cache.get('source') == 'TDT' and ctx.plot_signal == 'overlay_all':
+        for key, sig in cache['signals'].items():
+            _add_line(cache['x'], sig['y'], sig['color'], 1, sig['label'], alpha=0.8)
+        y_label, title_text = "Amplitude", f"Overlay — {cache['store']}"
+        x_label = "Time (s)"
     else:
         _, label_text, data_to_plot, color = get_active_signal(ctx)
-        _add_line(cache['x'], data_to_plot, color, 1, label_text)
+        _add_line(cache['x'], data_to_plot, color, 1, label_text, alpha=0.8)
         y_label, title_text = "Amplitude", f"{label_text} — {cache['store']}"
         x_label = "Time (s)"
 
@@ -341,27 +350,23 @@ def vispy_export_view(ctx):
     if ctx.cache is None:
         show_error(ctx, "No plot to export.")
         return
-    start_dir = ctx.last_dir or ctx.settings["default_folder"]
-    file_path, _ = QFileDialog.getSaveFileName(
-        ctx.win, "Export View", os.path.join(start_dir, f"{ctx.cache['store']}_view.png"), "PNG (*.png)"
-    )
-    if not file_path:
-        return
     img = ctx.vispy_canvas.render()
     # The legend is a Qt overlay on canvas.native, not part of the OpenGL
     # scene canvas.render() captures — composite it in separately so an
     # exported view actually matches what's on screen. Grabbing the
     # legend widget directly (rather than the whole canvas.native) avoids
     # re-capturing the scene itself a second time at a possibly different
-    # resolution than render()'s own output.
+    # resolution than render()'s own output. Done up front (not inside
+    # the write callback) since it's independent of where the file ends
+    # up going.
     qimg = QImage(img.tobytes(), img.shape[1], img.shape[0], QImage.Format.Format_RGBA8888)
     if ctx.vispy_legend_widget.isVisible():
         legend_pixmap = ctx.vispy_legend_widget.grab()
         painter = QPainter(qimg)
         painter.drawPixmap(ctx.vispy_legend_widget.pos(), legend_pixmap)
         painter.end()
-    qimg.save(file_path, "PNG")
-    show_window_toast(ctx, "View Exported")
+    export_file(ctx, ctx.win, "Export View", f"{ctx.cache['store']}_view.png", "PNG (*.png)",
+                lambda path: qimg.save(path, "PNG"))
 
 
 def vispy_set_grid_visibility(ctx):

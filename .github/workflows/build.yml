@@ -1,8 +1,8 @@
 name: Build Executables (Windows + macOS)
 
 # Runs when you push a version tag, e.g.:
-#   git tag v2.11.0
-#   git push origin v2.11.0
+#   git tag v2.12.0
+#   git push origin v2.12.0
 # Builds a native PyInstaller executable on each OS separately - it
 # can't cross-compile, has to actually run on the target OS - packages
 # each as a zip alongside the packaging/ collateral (README, thank-you

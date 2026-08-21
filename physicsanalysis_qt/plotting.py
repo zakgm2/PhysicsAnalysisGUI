@@ -6,16 +6,13 @@ _apply_plot_attrs() re-applies persisted label/font/legend customisations
 after any redraw, and export_canvas_action() saves the current view.
 """
 
-import os
-
 import numpy as np
 import matplotlib.transforms as transforms
-from PyQt6.QtWidgets import QFileDialog
 
-from .context import get_active_signal
+from .context import export_file, get_active_signal
 from .fonts import main_plot_scale
 from .theme import mpl_colors
-from .toasts import show_error, show_window_toast
+from .toasts import show_error
 
 _DECIMATE_MAX_POINTS_DEFAULT = 2000  # fallback if no ctx is available
 
@@ -263,6 +260,19 @@ def simple_plot(ctx, draw_now=True):
         title = cache['store']
         x_label = cache.get('x_label', 'X')
         n_snap_lines = len(cache['y_columns'])
+    elif ctx.plot_signal == 'overlay_all' and cache.get('source') == 'TDT':
+        ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
+        for key, sig in cache['signals'].items():
+            # lw=1.5, not Oxysoft's 0.8 — the hover tracker below filters
+            # visible lines to linewidth >= 1.5 (see interaction.py), so a
+            # thinner line here would be silently un-hoverable.
+            ln, = ax.plot(cache['x'], sig['y'], color=sig['color'],
+                           lw=1.5, alpha=0.8, label=sig['label'])
+            decim_lines.append((ln, cache['x'], sig['y']))
+        y_label = "Amplitude"
+        title = f"Overlay — {cache['store']}"
+        x_label = "Time (s)"
+        n_snap_lines = len(cache['signals'])
     else:
         _, label_text, data_to_plot, color_choice = get_active_signal(ctx)
         ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
@@ -355,11 +365,6 @@ def export_canvas_action(ctx):
         from .vispy_engine import vispy_export_view
         vispy_export_view(ctx)
         return
-    start_dir = ctx.last_dir or ctx.settings["default_folder"]
-    file_path, _ = QFileDialog.getSaveFileName(
-        ctx.win, "Export View", os.path.join(start_dir, f"{ctx.cache['store']}_view.png"),
-        "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)"
-    )
-    if file_path:
-        ctx.fig.savefig(file_path, dpi=300, bbox_inches='tight')
-        show_window_toast(ctx, "View Exported")
+    export_file(ctx, ctx.win, "Export View", f"{ctx.cache['store']}_view.png",
+                "PNG (*.png);;PDF (*.pdf);;SVG (*.svg)",
+                lambda path: ctx.fig.savefig(path, dpi=300, bbox_inches='tight'))

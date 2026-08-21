@@ -12,12 +12,25 @@ import numpy as np
 from PyQt6.QtCore import QPoint
 from PyQt6.QtWidgets import QMenu
 
-from .markers import place_marker, find_nearest_marker, open_edit_marker_dialog
+from .markers import MARKER_HIT_PX, place_marker, find_nearest_marker, open_edit_marker_dialog
 from .toasts import show_error, show_window_toast
 
 
 def _nearest_index(full_x, x):
     return int(np.abs(full_x - x).argmin())
+
+
+def _marker_hit_tolerance(ctx):
+    """MARKER_HIT_PX on-screen pixels -> data-space seconds under the
+    ViewBox's current view range, so the hit-test radius around a marker
+    stays a constant size on screen instead of ballooning at high zoom —
+    see interaction.py's own copy of this for the matplotlib engine."""
+    vb = ctx.pg_viewbox
+    width_px = vb.width()
+    if not width_px:
+        return 2.0
+    (x0, x1), _ = vb.viewRange()
+    return MARKER_HIT_PX * (x1 - x0) / width_px
 
 
 def on_pg_mouse_moved(ctx, scene_pos):
@@ -79,12 +92,13 @@ def on_pg_mouse_clicked(ctx, ev):
         if ev.button() == Qt.MouseButton.LeftButton:
             place_marker(ctx, x)
         elif ev.button() == Qt.MouseButton.RightButton:
-            _right_click_marker_menu(ctx, x, ev.screenPos())
+            _right_click_marker_menu(ctx, x, ev.screenPos(), _marker_hit_tolerance(ctx))
         return
 
     if ev.button() == Qt.MouseButton.RightButton:
-        if find_nearest_marker(ctx, x) is not None:
-            _right_click_marker_menu(ctx, x, ev.screenPos())
+        tol_s = _marker_hit_tolerance(ctx)
+        if find_nearest_marker(ctx, x, tol_s) is not None:
+            _right_click_marker_menu(ctx, x, ev.screenPos(), tol_s)
         return
 
     if ctx.plot_type_combo.currentText() == "Curve Fit" and ev.button() == Qt.MouseButton.LeftButton:
@@ -126,13 +140,13 @@ def on_pg_mouse_clicked(ctx, ev):
             apply_splice_at_points(ctx, t1, t2)
 
 
-def _right_click_marker_menu(ctx, xdata, global_pos):
+def _right_click_marker_menu(ctx, xdata, global_pos, tol_s=2.0):
     from .pg_engine import pg_simple_plot  # local import: avoid module cycle at import time
     from .marker_labels import marker_display_label
     from .markers import delete_all_same_name
     from .toasts import show_success
 
-    idx = find_nearest_marker(ctx, xdata)
+    idx = find_nearest_marker(ctx, xdata, tol_s)
     if idx is None:
         return
     marker = ctx.cache['markers'][idx]

@@ -24,13 +24,20 @@ _ENGINE_LABELS = {
 }
 _ENGINE_VALUES = {v: k for k, v in _ENGINE_LABELS.items()}
 
+_REGRESSION_LABELS = {
+    "ransac": "RANSAC (default — excludes severe artifacts entirely)",
+    "huber":  "Huber (downweights outliers instead of excluding them)",
+    "ols":    "OLS (no robustness — plain least-squares)",
+}
+_REGRESSION_VALUES = {v: k for k, v in _REGRESSION_LABELS.items()}
+
 
 class OptionsDialog(QDialog):
     def __init__(self, parent, ctx):
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Options")
-        self.resize(480, 340)
+        self.resize(500, 480)
         layout = QVBoxLayout(self)
 
         gb_theme = QGroupBox("Appearance")
@@ -61,14 +68,50 @@ class OptionsDialog(QDialog):
         g0.addWidget(engine_note, 1, 0, 1, 2)
         layout.addWidget(gb_engine)
 
-        gb_folder = QGroupBox("File Dialogs")
+        gb_regression = QGroupBox("Motion Correction (TDT)")
+        gr = QGridLayout(gb_regression)
+        gr.addWidget(QLabel("Regression:"), 0, 0)
+        self.combo_regression = QComboBox()
+        self.combo_regression.addItems(list(_REGRESSION_LABELS.values()))
+        self.combo_regression.setCurrentText(
+            _REGRESSION_LABELS[ctx.settings.get("regression_method", "ransac")])
+        gr.addWidget(self.combo_regression, 0, 1)
+        regression_note = QLabel(
+            "Used to regress the isosbestic (415nm) stream onto the signal (465nm)\n"
+            "stream during motion correction. Takes effect on the next TDT folder\n"
+            "load/reload — an already-loaded recording isn't reprocessed."
+        )
+        regression_note.setStyleSheet("color: gray;")
+        regression_note.setWordWrap(True)
+        gr.addWidget(regression_note, 1, 0, 1, 2)
+        layout.addWidget(gb_regression)
+
+        gb_folder = QGroupBox("Folders")
         g1 = QGridLayout(gb_folder)
-        g1.addWidget(QLabel("Default folder:"), 0, 0)
+        g1.addWidget(QLabel("Default folder (Open dialogs):"), 0, 0)
         self.e_folder = QLineEdit(ctx.settings["default_folder"])
         g1.addWidget(self.e_folder, 0, 1)
-        btn_browse = QPushButton("Browse…")
+        btn_browse = QPushButton("📁 Browse…")
         btn_browse.clicked.connect(self._browse)
         g1.addWidget(btn_browse, 0, 2)
+
+        g1.addWidget(QLabel("Output folder (exports):"), 1, 0)
+        self.e_output_folder = QLineEdit(ctx.settings.get("output_folder", ""))
+        self.e_output_folder.setPlaceholderText("(same as last-opened folder)")
+        g1.addWidget(self.e_output_folder, 1, 1)
+        btn_browse_output = QPushButton("📁 Browse…")
+        btn_browse_output.clicked.connect(self._browse_output)
+        g1.addWidget(btn_browse_output, 1, 2)
+
+        output_note = QLabel(
+            "When set, CSV/PNG/PDF/SVG exports (Curve Fit, FFT, PETH, AUC,\n"
+            "plot exports, …) save straight here with no dialog at all.\n"
+            "Leave blank to get a save dialog instead, seeded from wherever\n"
+            "you last opened a file."
+        )
+        output_note.setStyleSheet("color: gray;")
+        output_note.setWordWrap(True)
+        g1.addWidget(output_note, 2, 0, 1, 3)
         layout.addWidget(gb_folder)
 
         gb_perf = QGroupBox("Performance (matplotlib engine)")
@@ -119,16 +162,29 @@ class OptionsDialog(QDialog):
         if path:
             self.e_folder.setText(path)
 
+    def _browse_output(self):
+        path = QFileDialog.getExistingDirectory(
+            self, "Output Folder", self.e_output_folder.text() or self.e_folder.text())
+        if path:
+            self.e_output_folder.setText(path)
+
     def _apply(self):
         folder = self.e_folder.text().strip()
         if folder and os.path.isdir(folder):
             self.ctx.settings["default_folder"] = folder
+
+        output_folder = self.e_output_folder.text().strip()
+        if not output_folder or os.path.isdir(output_folder):
+            self.ctx.settings["output_folder"] = output_folder
+
         self.ctx.settings["decimate_max_points"] = self.spin_points.value()
         self.ctx.settings["background_loading"] = self.cb_threaded.isChecked()
 
         new_engine = _ENGINE_VALUES[self.combo_engine.currentText()]
         engine_changed = new_engine != self.ctx.settings["plot_engine"]
         self.ctx.settings["plot_engine"] = new_engine
+
+        self.ctx.settings["regression_method"] = _REGRESSION_VALUES[self.combo_regression.currentText()]
 
         new_theme = self.combo_theme.currentText().lower()
         theme_changed = new_theme != self.ctx.settings.get("theme", "light")

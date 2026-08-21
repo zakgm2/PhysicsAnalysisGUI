@@ -56,10 +56,12 @@ def default_settings():
     desktop = os.path.join(os.path.expanduser("~"), "Desktop")
     return {
         "default_folder":      desktop if os.path.isdir(desktop) else os.path.expanduser("~"),
+        "output_folder":       "",  # "" = fall back to last-opened folder, then default_folder — see get_export_dir()
         "decimate_max_points": 2000,
         "background_loading":  True,
         "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph" | "vispy"
         "theme":               "light",       # "light" | "dark"
+        "regression_method":   "ransac",      # "ransac" | "huber" | "ols" — TDT motion correction, see PhysicsLibrary.REGRESSION_METHODS
     }
 
 
@@ -265,6 +267,70 @@ def get_active_signal(ctx):
     key = ctx.plot_signal if ctx.plot_signal in signals else next(iter(signals))
     sig = signals[key]
     return key, sig['label'], sig['y'], sig['color']
+
+
+def get_normalized_signal(ctx):
+    """Like get_active_signal, but always resolves to the normalized
+    (dF/F) trace regardless of what ctx.plot_signal / the main plot's
+    "Plot:" dropdown currently shows. Every analysis dialog (Curve Fit,
+    FFT, Z-Score PETH, Event PETH, Peak Finder, AUC) must analyze the
+    same normalized signal no matter which signal is currently being
+    *displayed* — this exists specifically to decouple that from
+    get_active_signal, which the plotting engines' own render calls keep
+    using unchanged so the main plot still honors the dropdown.
+    """
+    cache = ctx.cache
+    signals = cache.get('signals')
+    if not signals:
+        y = cache['corr'] if 'corr' in cache else cache['raw']
+        return "normalized", "dF/F (corrected)", y, 'blue'
+    key = "normalized" if "normalized" in signals else next(iter(signals))
+    sig = signals[key]
+    return key, sig['label'], sig['y'], sig['color']
+
+
+def get_export_dir(ctx):
+    """Starting directory for every *save* dialog (CSV/PNG/PDF/SVG
+    exports) — settings["output_folder"] if the user has set one
+    (Options → Output Folder), else the same last-opened-folder-then-
+    default-folder fallback these dialogs used before that setting
+    existed. Deliberately separate from settings["default_folder"],
+    which only seeds *Open* dialogs — pinning exports to one folder
+    shouldn't also redirect where Open starts browsing from, and vice
+    versa."""
+    return ctx.settings.get("output_folder") or ctx.last_dir or ctx.settings["default_folder"]
+
+
+def export_file(ctx, parent, title, default_filename, filter_str, write_fn):
+    """Saves an export (a figure image or a CSV) to disk. write_fn(path)
+    does the actual writing — called once a destination is settled,
+    either way below.
+
+    If settings["output_folder"] is set (Options → Output Folder), saves
+    straight there with no dialog at all, just a confirmation toast —
+    that's the whole point of pinning an output folder. Otherwise prompts
+    via a save dialog seeded from get_export_dir(ctx), exactly like every
+    export already did before that setting existed. A write_fn failure
+    (bad path, permissions, ...) surfaces as an error instead of failing
+    silently either way."""
+    from PyQt6.QtWidgets import QFileDialog
+
+    from .toasts import show_error, show_window_toast
+
+    output_folder = ctx.settings.get("output_folder")
+    if output_folder:
+        path = os.path.join(output_folder, default_filename)
+    else:
+        path, _ = QFileDialog.getSaveFileName(
+            parent, title, os.path.join(get_export_dir(ctx), default_filename), filter_str)
+        if not path:
+            return
+    try:
+        write_fn(path)
+    except Exception as e:
+        show_error(ctx, f"Export failed: {e}")
+        return
+    show_window_toast(ctx, f"Saved {os.path.basename(path)}")
 
 
 def signal_short_label(key):
