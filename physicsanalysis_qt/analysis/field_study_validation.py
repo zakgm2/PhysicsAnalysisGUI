@@ -14,16 +14,16 @@ analysis/text_field_study.py's results viewer.
 """
 
 import datetime
-import os
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QFileDialog, QHeaderView,
+    QPushButton, QLabel, QHeaderView,
 )
 
 import PhysicsLibrary as pl
 
 from ..background import run_in_background
+from ..context import export_file
 from ..toasts import show_error, show_window_toast
 
 
@@ -90,19 +90,9 @@ class ValidationSummaryDialog(QDialog):
 
     def _export_csv(self):
         ts = datetime.datetime.now().strftime("%H%M%S")
-        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Statistical Validation",
-            os.path.join(start_dir, f"StatisticalValidation_{ts}.csv"),
-            "CSV (*.csv);;Text (*.txt)"
-        )
-        if not path:
-            return
-        try:
-            self.df.to_csv(path, index=False)
-            show_window_toast(self.ctx, "Statistical Validation Exported")
-        except Exception as e:
-            show_error(self.ctx, f"Export Failed: {e}")
+        export_file(self.ctx, self, "Export Statistical Validation",
+                     f"StatisticalValidation_{ts}.csv", "CSV (*.csv);;Text (*.txt)",
+                     lambda path: self.df.to_csv(path, index=False))
 
 
 def launch_field_study_validation(ctx):

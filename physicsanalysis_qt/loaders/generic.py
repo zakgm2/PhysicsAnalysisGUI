@@ -123,7 +123,7 @@ class GenericLoaderDialog(QDialog):
         for yi in y_indices:
             y_columns[t.headers[yi]] = t.data[valid, yi]
 
-        fs = float(1.0 / np.median(np.diff(x_data))) if len(x_data) > 1 else 1.0
+        fs = pl.estimate_sample_rate(x_data) if len(x_data) > 1 else 1.0
 
         self.ctx._data_generation += 1
         self.ctx.cache = {

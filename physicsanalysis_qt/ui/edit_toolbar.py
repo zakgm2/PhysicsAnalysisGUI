@@ -4,10 +4,11 @@ ui/edit_toolbar.py
 Left-side icon toolbar for tools that change how the loaded data looks
 or gets analyzed WITHOUT touching the original raw data on disk (or, for
 Splice, without mutating the original in-memory recording either) —
-Rescale, Add Marker, Splice/Restore, Save Changes, Undo All Changes, and
-anywhere else this grows. Small square icon buttons (emoji glyphs, no
-external image assets needed) in a fixed-width vertical strip,
-collapsible via a small arrow handle so it doesn't have to stay in view.
+Rescale, Add Marker, Splice/Restore, Save Changes, Undo All Changes,
+Measure Intervals, and anywhere else this grows. Small square icon
+buttons (emoji glyphs, no external image assets needed) in a
+fixed-width vertical strip, collapsible via a small arrow handle so it
+doesn't have to stay in view.
 """
 
 from PyQt6.QtCore import Qt
@@ -20,6 +21,7 @@ from ..sidecar import save_markers, clear_json_saves
 from ..analysis.splice import (
     restore_full_recording, is_spliced, save_splice, open_splice_manager, start_splice_flow,
 )
+from ..analysis.intervals import launch_intervals
 
 _ICON_SIZE = 44
 _HANDLE_WIDTH = 18
@@ -103,6 +105,12 @@ def build_edit_toolbar(ctx):
         "⛶", "Rescale — fit the view to the full recording (was \"Reset Zoom\")")
     btn_rescale.clicked.connect(lambda: reset_zoom(ctx))
     content_layout.addWidget(btn_rescale)
+
+    btn_intervals = _icon_button(
+        "📏", "Measure Intervals — time between whatever markers are "
+              "currently on the plot")
+    btn_intervals.clicked.connect(lambda: launch_intervals(ctx))
+    content_layout.addWidget(btn_intervals)
 
     # Add Marker — reuses the existing ctx.btn_add_marker contract:
     # toggle_marker_mode() (markers.py) sets its text/style directly to

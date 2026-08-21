@@ -25,10 +25,10 @@ from PyQt6.QtWidgets import (
 import PhysicsLibrary as pl
 
 from ..background import run_in_background
-from ..context import get_active_signal
+from ..context import get_normalized_signal
 from ..marker_labels import marker_display_label
 from ..toasts import show_error, show_window_toast
-from .dispatch import get_window
+from .dispatch import add_stats_export_buttons, get_window
 from .event_peth import _group_markers_by_name
 
 _AUTO_PEAK_COLOR = "magenta"
@@ -181,14 +181,15 @@ class _PeakFinderDialog(QDialog):
 class _AlignmentResultsDialog(QDialog):
     """Per-event found/not-found + latency table for the two event-scoped modes."""
 
-    def __init__(self, parent, event_name, results):
+    def __init__(self, parent, ctx, event_name, results):
         super().__init__(parent)
         self.setWindowTitle(f"Peak Alignment — {event_name}")
         self.resize(500, 400)
         layout = QVBoxLayout(self)
 
         n_found = sum(1 for r in results if r["found"])
-        layout.addWidget(QLabel(f"{n_found} / {len(results)} event(s) had a peak at or above threshold."))
+        summary = f"{n_found} / {len(results)} event(s) had a peak at or above threshold."
+        layout.addWidget(QLabel(summary))
 
         table = QTableWidget(len(results), 4)
         table.setHorizontalHeaderLabels(["Event Time (s)", "Found?", "Latency (s)", "Z-score"])
@@ -200,9 +201,23 @@ class _AlignmentResultsDialog(QDialog):
             table.setItem(row, 3, QTableWidgetItem(f"{r['z_score']:.2f}" if r["found"] else "--"))
         layout.addWidget(table)
 
+        btn_row = QHBoxLayout()
+        add_stats_export_buttons(
+            ctx, self, btn_row,
+            get_clipboard_text=lambda: summary,
+            csv_default_name=f"PeakAlignment_{event_name}",
+            csv_header=["Event Time (s)", "Found", "Latency (s)", "Z-score"],
+            get_csv_rows=lambda: [
+                [f"{r['event_time']:.4f}", r['found'],
+                 f"{r['latency']:.4f}" if r['found'] else "",
+                 f"{r['z_score']:.4f}" if r['found'] else ""]
+                for r in results
+            ],
+        )
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.accept)
-        layout.addWidget(btn_close)
+        btn_row.addWidget(btn_close)
+        layout.addLayout(btn_row)
 
 
 def _add_peak_markers(ctx, entries):
@@ -259,15 +274,31 @@ class _ScanAllTypesResultsDialog(QDialog):
         btn_row = QHBoxLayout()
         btn_add_all = QPushButton("Add Markers for All Found Peaks")
         btn_add_all.clicked.connect(self._add_all_found)
+        btn_row.addWidget(btn_add_all)
+        add_stats_export_buttons(
+            ctx, self, btn_row,
+            get_clipboard_text=lambda: "\n".join(
+                f"{name}: {sum(r['found'] for r in results)}/{len(results)} found"
+                for name, results in self.rows
+            ),
+            csv_default_name="PeakScan_AllEventTypes",
+            csv_header=["Event", "Occurrences", "Found", "Hit Rate", "Avg Z (found only)"],
+            get_csv_rows=lambda: [
+                [name, len(results), sum(r["found"] for r in results),
+                 f"{(sum(r['found'] for r in results) / len(results)) if results else 0.0:.4f}",
+                 (f"{sum(r['z_score'] for r in results if r['found']) / max(1, sum(r['found'] for r in results)):.4f}"
+                  if any(r['found'] for r in results) else "")]
+                for name, results in self.rows
+            ],
+        )
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.accept)
-        btn_row.addWidget(btn_add_all)
         btn_row.addWidget(btn_close)
         layout.addLayout(btn_row)
 
     def _view_details(self, row):
         name, results = self.rows[row]
-        dlg = _AlignmentResultsDialog(self, name, results)
+        dlg = _AlignmentResultsDialog(self, self.ctx, name, results)
         dlg.exec()
 
     def _add_all_found(self):
@@ -294,7 +325,7 @@ def launch_peak_finder(ctx):
     if dlg.exec() != QDialog.DialogCode.Accepted:
         return
 
-    _, _, data_source, _ = get_active_signal(ctx)
+    _, _, data_source, _ = get_normalized_signal(ctx)
     time_array = ctx.cache['x']
     fs = ctx.cache['fs']
     scope = dlg.scope
@@ -364,7 +395,7 @@ def launch_peak_finder(ctx):
         show_window_toast(
             ctx, f"{len(found_entries)} / {len(results)} event(s) had an aligned peak"
         )
-        results_dlg = _AlignmentResultsDialog(ctx.win, dlg.event_name, results)
+        results_dlg = _AlignmentResultsDialog(ctx.win, ctx, dlg.event_name, results)
         results_dlg.exec()
 
     def _on_error(msg):

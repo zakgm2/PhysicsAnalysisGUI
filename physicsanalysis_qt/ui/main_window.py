@@ -7,20 +7,29 @@ engines in Options is instant), mouse/scroll/resize event wiring,
 rectangle selector, status bar.
 """
 
+from datetime import date
+
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.widgets import RectangleSelector
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import Qt, QTimer, QUrl
+from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QStatusBar, QStackedWidget,
+    QToolButton,
 )
 
 from .. import interaction
 from ..pg_engine import build_pg_widget, sync_pg_margins
+from ..toasts import show_window_toast
 from ..update_check import local_version
 from ..vispy_engine import build_vispy_widget, sync_vispy_margins
 from .toolbar import build_toolbar
 from .edit_toolbar import build_edit_toolbar
+
+REPO_URL = "https://github.com/zakgm2/PhysicsAnalysis"
+FEEDBACK_URL = f"{REPO_URL}/issues"
+COFFEE_URL = "https://buymeacoffee.com/zakgm2"
 
 
 def _widget_for_engine(ctx):
@@ -140,8 +149,67 @@ def build_main_window(ctx):
     ctx.status_bar = QStatusBar()
     ctx.win.setStatusBar(ctx.status_bar)
     ctx.status_bar.showMessage("X: -- | Y: -- | Pt: --")
+    ctx.status_bar.addPermanentWidget(_build_coffee_button())
+    ctx.status_bar.addPermanentWidget(_build_citation_button(ctx))
+    ctx.status_bar.addPermanentWidget(_build_feedback_button())
 
     return ctx.win
+
+
+def _build_coffee_button():
+    """Coffee icon in the status bar — opens the Buy Me a Coffee page in
+    the user's browser, same open-external-link pattern as the feedback
+    button below."""
+    btn = QToolButton()
+    btn.setText("☕")
+    btn.setToolTip("Buy Me a Coffee")
+    btn.setAutoRaise(True)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(COFFEE_URL)))
+    return btn
+
+
+def _build_feedback_button():
+    """Bug icon in the status bar's bottom-right corner — opens the GitHub
+    issues page in the user's browser so bug reports/feedback don't need
+    to be routed through the developer manually."""
+    btn = QToolButton()
+    btn.setText("\U0001F41E")  # 🐞
+    btn.setToolTip("Send Feedback")
+    btn.setAutoRaise(True)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(FEEDBACK_URL)))
+    return btn
+
+
+def apa_citation():
+    """APA 7 software citation. Year is "today" rather than a stored
+    per-version release date — this project doesn't track one, and for a
+    citation generated at run time that's a reasonable stand-in."""
+    try:
+        version = local_version("physicsanalysis_qt")
+    except Exception:
+        version = None
+    version_part = f" (Version {version})" if version else ""
+    return f"Grand Maison, Z. ({date.today().year}). Physics Analysis GUI{version_part} [Computer software]. {REPO_URL}"
+
+
+def _build_citation_button(ctx):
+    """Quote-mark icon in the status bar — copies an APA citation for this
+    app to the clipboard and confirms with a toast, so users citing it in
+    a paper don't have to hand-write the format themselves."""
+    btn = QToolButton()
+    btn.setText("❝ APA Citation")
+    btn.setToolTip("Copy APA citation to clipboard")
+    btn.setAutoRaise(True)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def _copy():
+        ctx.app.clipboard().setText(apa_citation())
+        show_window_toast(ctx, "Citation copied to clipboard")
+
+    btn.clicked.connect(_copy)
+    return btn
 
 
 def _build_matplotlib_canvas(ctx):

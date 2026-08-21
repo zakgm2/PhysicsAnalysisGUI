@@ -1,67 +1,138 @@
 """
 analysis/peth.py
 -------------------
-Z-score PETH (peri-event time histogram) window, TDT-only.
+Z-Score window analysis — same click-triggered dispatch as FFT/AUC
+(double-click near a point with "Z-Score" selected in the toolbar's
+plot-type combo). Not a PETH (peri-event time histogram, which averages
+many occurrences of one event) — this analyzes a single clicked point;
+see analysis/event_peth.py for the real multi-trial version. Mirrors
+auc.py's per-source branching (Oxysoft dual/triple-channel vs.
+TDT/Generic single-channel). Generic/double-click tools like this one
+deliberately analyze whichever signal the "Plot:" dropdown currently
+shows (get_active_signal) rather than always the normalized signal —
+that's reserved for the dataset-specific tools under Custom Statistics
+(Event PETH, Find Significant Peaks), which always analyze the
+corrected/normalized signal regardless of what's on screen.
 """
 
+import numpy as np
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QPushButton
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton
 
 import PhysicsLibrary as pl
 
-from ..context import get_active_signal, signal_short_label
+from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_error, show_window_toast
-from .dispatch import export_figure_to_file, get_window
+from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
 
 
 def launch_zscore_peth(ctx, center_t):
-    if ctx.cache is None or ctx.cache.get('source') != 'TDT':
-        show_error(ctx, "PETH is only available for TDT data.")
+    if ctx.cache is None:
         return
     pre, post = get_window(ctx)
-    key, _, data_source, _ = get_active_signal(ctx)
-    mode_str = signal_short_label(key)
-    clean_signal = pl.smooth_signal(data_source, ctx.cache['fs'])
-    slice_x, z_seg = pl.get_zscore_slice(ctx.cache['x'], clean_signal, center_t, pre=pre, post=post)
-    if z_seg is None:
+    cache = ctx.cache
+
+    channels = []  # (label, y, color)
+    if cache.get('source') == 'Oxysoft':
+        o2hb = pl.mean_channels(cache['o2hb'])
+        hhb = pl.mean_channels(cache['hhb'])
+        channels.append(('Mean O2Hb', o2hb, '#CC0000'))
+        channels.append(('Mean HHb', hhb, '#0033CC'))
+        if 'thb' in cache:
+            thb = pl.mean_channels(cache['thb'])
+            channels.append(('Mean tHb', thb, '#228B22'))
+    elif 'corr' in cache or 'raw' in cache:
+        # TDT (and any other single-signal cache carrying corr/raw) —
+        # whichever signal the "Plot:" dropdown currently displays.
+        _, label, y, color = get_active_signal(ctx)
+        channels.append((label, y, color))
+    else:
+        # Generic source: no 'signals'/'corr'/'raw' — same first-column
+        # fallback fft.py/auc.py use for a Generic multi-column file.
+        y = next(iter(cache['y_columns'].values()))
+        channels.append(('Signal', y, '#2196F3'))
+
+    fs = cache['fs']
+    results = []
+    for label, y, color in channels:
+        clean_signal = pl.smooth_signal(y, fs)
+        slice_x, z_seg = pl.get_zscore_slice(cache['x'], clean_signal, center_t, pre=pre, post=post)
+        if z_seg is None or len(z_seg) == 0:
+            continue
+        peak_idx = int(np.argmax(np.abs(z_seg)))
+        results.append({
+            "channel": label, "color": color, "slice_x": slice_x, "z_seg": z_seg,
+            "peak_z": float(z_seg[peak_idx]), "peak_rel_t": float(slice_x[peak_idx] - center_t),
+        })
+
+    if not results:
+        show_error(ctx, "Not enough data in this window to compute a Z-score.")
         return
-    z_binned = pl.bin_for_heatmap(z_seg)
 
     dlg = QDialog(ctx.win)
-    dlg.setWindowTitle(f"PETH Analysis ({mode_str}) - {center_t:.2f}s  "
-                        f"(-{pre:.0f}s/+{post:.0f}s)")
+    dlg.setWindowTitle(
+        f"Z-Score Analysis — {cache['store']}  |  centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s"
+    )
     dlg.resize(700, 650)
     layout = QVBoxLayout(dlg)
 
-    fig_peth = Figure(figsize=(8, 7), dpi=100)
-    ax_heat, ax_line = fig_peth.subplots(2, 1, sharex=True, gridspec_kw={'height_ratios': [1, 1]})
+    n = len(results)
+    fig = Figure(figsize=(8, 4.5 * n), dpi=100)
+    axes = fig.subplots(2 * n, 1, gridspec_kw={'height_ratios': [1, 2] * n})
+    tfs, lfs = 12, 10
+    for i, r in enumerate(results):
+        ax_heat, ax_line = axes[2 * i], axes[2 * i + 1]
+        z_binned = pl.bin_for_heatmap(r['z_seg'])
+        ax_heat.imshow(z_binned.reshape(1, -1), aspect='auto', cmap='YlGnBu_r',
+                       extent=[-pre, post, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
+        ax_heat.set_yticks([])
+        tfs, lfs, _ = fig_font_sizes(fig)
+        ax_heat.set_ylabel(r['channel'], fontweight='bold', fontsize=lfs)
 
-    ax_heat.imshow(z_binned.reshape(1, -1), aspect='auto', cmap='YlGnBu_r',
-                   extent=[-pre, post, 0, 1], vmin=-5, vmax=5, interpolation='bilinear')
-    ax_heat.set_yticks([])
-    tfs_p, lfs_p, _ = fig_font_sizes(fig_peth)
-    ax_heat.set_ylabel("Intensity", fontweight='bold', fontsize=lfs_p)
+        ax_line.plot(r['slice_x'] - center_t, r['z_seg'], color=r['color'], linewidth=1.5)
+        ax_line.axvline(0, color='red', linestyle='--', alpha=0.8)
+        ax_line.set_xlim([-pre, post])
+        ax_line.set_ylim([-5, 5])
+        ax_line.set_ylabel("Z-Score", fontweight='bold', fontsize=lfs)
+    axes[-1].set_xlabel("Time from Center (s)", fontweight='bold', fontsize=lfs)
 
-    ax_line.plot(slice_x - center_t, z_seg, color='black', linewidth=1.5)
-    ax_line.axvline(0, color='red', linestyle='--', alpha=0.8)
-    ax_line.set_xlim([-pre, post])
-    ax_line.set_ylim([-5, 5])
-    ax_line.set_ylabel(f"Z-Score ({mode_str})", fontweight='bold', fontsize=lfs_p)
-    ax_line.set_xlabel("Time from Center (s)", fontweight='bold', fontsize=lfs_p)
+    fig.suptitle("Z-Score Analysis", fontsize=tfs, fontweight='bold')
+    fig.tight_layout(rect=[0, 0.03, 1, 0.97])
 
-    fig_peth.suptitle("Z-score PETH", fontsize=tfs_p, fontweight='bold')
-    fig_peth.tight_layout(rect=[0, 0.05, 1, 0.95])
+    canvas = FigureCanvasQTAgg(fig)
+    layout.addWidget(canvas)
 
-    canvas_peth = FigureCanvasQTAgg(fig_peth)
-    layout.addWidget(canvas_peth)
+    result_lbl = QLabel()
+    result_lbl.setFont(QFont("Consolas", 9))
+    result_lbl.setWordWrap(True)
+    result_lbl.setFrameShape(QFrame.Shape.Panel)
+    result_lbl.setStyleSheet("background-color: white; color: black; padding: 8px;")
+    blocks = [
+        f"[{r['channel']}]\n  Peak Z-score:  {r['peak_z']:.4f} at t = {r['peak_rel_t']:+.2f}s"
+        for r in results
+    ]
+    blocks.append(f"Window: -{pre:.1f}s / +{post:.1f}s around {center_t:.2f}s")
+    result_lbl.setText("\n\n".join(blocks))
+    layout.addWidget(result_lbl)
 
-    btn_export = QPushButton(f"Export {mode_str} PETH")
-    btn_export.clicked.connect(
-        lambda: export_figure_to_file(ctx, fig_peth, f"PETH_{mode_str}", f"{int(center_t)}s")
+    btn_row = QHBoxLayout()
+    add_stats_export_buttons(
+        ctx, dlg, btn_row,
+        get_clipboard_text=lambda: result_lbl.text(),
+        csv_default_name=f"ZScore_{cache['store']}_{int(center_t)}s",
+        csv_header=["Channel", "time_from_center_s", "z_score"],
+        get_csv_rows=lambda: [
+            [r["channel"], f"{t - center_t:.4f}", f"{z:.4f}"]
+            for r in results for t, z in zip(r['slice_x'], r['z_seg'])
+        ],
     )
-    layout.addWidget(btn_export)
+    btn_export = QPushButton("Export Plot")
+    btn_export.clicked.connect(lambda: export_figure_to_file(ctx, fig, "ZScore", f"{int(center_t)}s"))
+    btn_row.addWidget(btn_export)
+    layout.addLayout(btn_row)
 
-    show_window_toast(ctx, f"PETH Generated at {center_t:.1f}s")
+    show_window_toast(ctx, f"Z-Score computed at {center_t:.1f}s")
     dlg.exec()

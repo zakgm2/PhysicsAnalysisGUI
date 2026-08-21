@@ -7,12 +7,13 @@ pre/post seconds around a clicked event) lives in window_settings.py
 alongside the toolbar button + dialog that configure it.
 """
 
+import csv
 import datetime
-import os
 
 from PyQt6.QtCore import QTimer
-from PyQt6.QtWidgets import QFileDialog
+from PyQt6.QtWidgets import QApplication, QPushButton
 
+from ..context import export_file
 from ..toasts import show_error, show_window_toast
 from .window_settings import get_window  # noqa: F401 — re-exported: existing callers import get_window from here
 
@@ -21,21 +22,78 @@ def export_figure_to_file(ctx, fig_obj, default_prefix, tracking_info=""):
     ts = datetime.datetime.now().strftime("%H%M%S")
     store_name = ctx.cache.get('store', 'Data') if ctx.cache else 'Data'
     suffix = f"_{tracking_info}" if tracking_info else ""
-    start_dir = ctx.last_dir or ctx.settings["default_folder"]
-    fpath, _ = QFileDialog.getSaveFileName(
-        ctx.win, f"Export {default_prefix} Visualization",
-        os.path.join(start_dir, f"{default_prefix}_{store_name}{suffix}_{ts}.png"),
-        "PNG Image (*.png);;PDF Document (*.pdf);;SVG Vector (*.svg)"
+    export_file(
+        ctx, ctx.win, f"Export {default_prefix} Visualization",
+        f"{default_prefix}_{store_name}{suffix}_{ts}.png",
+        "PNG Image (*.png);;PDF Document (*.pdf);;SVG Vector (*.svg)",
+        lambda path: fig_obj.savefig(path, dpi=300, bbox_inches='tight'),
     )
-    if fpath:
-        try:
-            fig_obj.savefig(fpath, dpi=300, bbox_inches='tight')
-            show_window_toast(ctx, f"{default_prefix} Exported")
-        except Exception as e:
-            show_error(ctx, f"Export Failed: {e}")
+
+
+def add_stats_export_buttons(ctx, parent, btn_row_layout, *, get_clipboard_text,
+                              csv_default_name, csv_header, get_csv_rows):
+    """Wires a "Copy" + "Export CSV" QPushButton pair into btn_row_layout,
+    matching curve_fit.py's original _copy_params/_export_csv pattern —
+    shared here so every stats-bearing analysis dialog (AUC, FFT, PETH,
+    Event PETH, Peak Finder) gets identical Copy/Export-CSV behavior from
+    one place instead of five near-copies of the same boilerplate that
+    could silently drift apart.
+
+    get_clipboard_text : () -> str, called when Copy is clicked.
+    csv_default_name : str or () -> str, filename prefix for the save
+        dialog's default name. A callable rather than a plain string lets
+        a long-lived dialog (e.g. Event PETH, whose event selection can
+        change after these buttons are built) resolve the current name at
+        click time instead of baking in whatever it was when built.
+    csv_header : list[str] or () -> list[str], written as the CSV's first
+        row. A callable lets a caller whose column count varies at
+        runtime (e.g. Event PETH's variable mean-time-bin columns)
+        resolve the current header at click time, same reasoning as
+        csv_default_name above.
+    get_csv_rows : () -> list[list] or None/[], called when Export CSV is
+        clicked; an empty/None result shows a "run it first" error instead
+        of opening the save dialog.
+
+    Returns (btn_copy, btn_csv) in case a caller wants to reposition/
+    restyle them beyond just having been appended to btn_row_layout.
+    """
+    def _copy():
+        txt = get_clipboard_text()
+        if not txt:
+            return
+        QApplication.clipboard().setText(txt)
+        show_window_toast(ctx, "Copied to clipboard")
+
+    def _write_csv(path, rows):
+        header = csv_header() if callable(csv_header) else csv_header
+        with open(path, 'w', newline='', encoding='utf-8') as fh:
+            writer = csv.writer(fh)
+            writer.writerow(header)
+            writer.writerows(rows)
+
+    def _export_csv():
+        rows = get_csv_rows()
+        if not rows:
+            show_error(ctx, "Nothing to export yet — run the analysis first.")
+            return
+        name = csv_default_name() if callable(csv_default_name) else csv_default_name
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_file(
+            ctx, parent, f"Export {name}", f"{name}_{ts}.csv",
+            "CSV (*.csv);;Text (*.txt)", lambda path: _write_csv(path, rows),
+        )
+
+    btn_copy = QPushButton("Copy")
+    btn_copy.clicked.connect(_copy)
+    btn_csv = QPushButton("Export CSV")
+    btn_csv.clicked.connect(_export_csv)
+    btn_row_layout.addWidget(btn_copy)
+    btn_row_layout.addWidget(btn_csv)
+    return btn_copy, btn_csv
 
 
 def analysis_type(ctx, clicked_x):
+    from .auc import launch_auc
     from .fft import launch_fft
     from .peth import launch_zscore_peth
 
@@ -67,8 +125,10 @@ def analysis_type(ctx, clicked_x):
     try:
         if current_mode == "FFT":
             launch_fft(ctx, center_timestamp)
-        elif current_mode in ("Z-Score PETH", "PETH"):
+        elif current_mode == "Z-Score":
             launch_zscore_peth(ctx, center_timestamp)
+        elif current_mode == "AUC":
+            launch_auc(ctx, center_timestamp)
     finally:
         def _reactivate():
             ctx.rect_selector.clear()

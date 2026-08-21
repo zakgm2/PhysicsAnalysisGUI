@@ -22,43 +22,16 @@ low pairs happen to alternate.
 
 import csv
 import datetime
-import os
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QFileDialog, QHeaderView,
+    QPushButton, QLabel, QHeaderView,
 )
 
+import PhysicsLibrary as pl
+
+from ..context import export_file
 from ..toasts import show_error, show_window_toast
-
-
-def compute_intervals(markers):
-    """Returns a list of row dicts, sorted by time:
-    time, store, label, phase, dt_store, dt_global.
-    dt_* are None for the first event in their respective sequence."""
-    ordered = sorted(markers, key=lambda m: m['time'])
-    last_time_by_store = {}
-    rows = []
-    prev_time = None
-    for m in ordered:
-        store = m.get('store') or m['label']
-        dt_store = None
-        if store in last_time_by_store:
-            dt_store = m['time'] - last_time_by_store[store]
-        last_time_by_store[store] = m['time']
-
-        dt_global = None if prev_time is None else m['time'] - prev_time
-        prev_time = m['time']
-
-        rows.append({
-            'time': m['time'],
-            'store': store,
-            'label': m['label'],
-            'phase': m.get('phase', ''),
-            'dt_store': dt_store,
-            'dt_global': dt_global,
-        })
-    return rows
 
 
 class IntervalsDialog(QDialog):
@@ -105,17 +78,7 @@ class IntervalsDialog(QDialog):
         self.ctx = ctx
 
     def _export_csv(self):
-        ts = datetime.datetime.now().strftime("%H%M%S")
-        store_name = self.ctx.cache.get('store', 'Data') if self.ctx.cache else 'Data'
-        start_dir = self.ctx.last_dir or self.ctx.settings["default_folder"]
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Export Event Intervals",
-            os.path.join(start_dir, f"EventIntervals_{store_name}_{ts}.csv"),
-            "CSV (*.csv);;Text (*.txt)"
-        )
-        if not path:
-            return
-        try:
+        def _write(path):
             with open(path, 'w', newline='') as fh:
                 writer = csv.writer(fh)
                 writer.writerow(["time_s", "store", "label", "phase",
@@ -126,15 +89,17 @@ class IntervalsDialog(QDialog):
                         "" if row['dt_store'] is None else f"{row['dt_store']:.6f}",
                         "" if row['dt_global'] is None else f"{row['dt_global']:.6f}",
                     ])
-            show_window_toast(self.ctx, "Event Intervals Exported")
-        except Exception as e:
-            show_error(self.ctx, f"Export Failed: {e}")
+
+        ts = datetime.datetime.now().strftime("%H%M%S")
+        store_name = self.ctx.cache.get('store', 'Data') if self.ctx.cache else 'Data'
+        export_file(self.ctx, self, "Export Event Intervals",
+                     f"EventIntervals_{store_name}_{ts}.csv", "CSV (*.csv);;Text (*.txt)", _write)
 
 
 def launch_intervals(ctx):
     if ctx.cache is None or not ctx.cache.get('markers'):
         show_error(ctx, "No markers currently on the plot to measure.")
         return
-    rows = compute_intervals(ctx.cache['markers'])
+    rows = pl.compute_marker_intervals(ctx.cache['markers'])
     dlg = IntervalsDialog(ctx, rows)
     dlg.exec()

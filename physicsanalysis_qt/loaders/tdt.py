@@ -76,11 +76,13 @@ def _load_folder(ctx, folder_path):
         show_error(ctx, "Only TDT folders are supported via 'Open TDT Folder'.")
         return
 
+    regression_method = ctx.settings.get("regression_method", "ransac")
+
     def _work():
         valid, msg = pl.validate_tdt_folder(folder_path)
         if not valid:
             raise ValueError(f"TDT validation failed: {msg}")
-        return pl.process_tdt_folder(folder_path)
+        return pl.process_tdt_folder(folder_path, regression_method=regression_method)
 
     def _on_success(result):
         # A stale splice from whatever was loaded before this must not
@@ -110,8 +112,8 @@ def _load_folder(ctx, folder_path):
         inlier_fraction = result.get('motion_correction_inlier_fraction')
         if inlier_fraction is not None:
             show_window_toast(
-                ctx, f"RANSAC motion correction kept {inlier_fraction * 100:.0f}% "
-                     "of samples as inliers")
+                ctx, f"{regression_method.upper()} motion correction kept "
+                     f"{inlier_fraction * 100:.0f}% of samples as inliers")
 
     def _on_error(msg):
         show_error(ctx, msg)
