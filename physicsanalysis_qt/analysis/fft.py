@@ -29,6 +29,23 @@ from ..toasts import show_window_toast
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
 
 
+def _annotate_fft_peaks(ax_f, freqs, power, color, n_peaks=3):
+    """Finds the top N peaks (pl.find_fft_peaks — the actual computation,
+    in PhysicsLibrary) and draws frequency/BPM labels for them directly
+    on the axes. The drawing itself is presentation, not analysis, so it
+    lives here rather than in PhysicsLibrary alongside the peak-finding
+    it depends on."""
+    for p in pl.find_fft_peaks(freqs, power, n_peaks=n_peaks):
+        ax_f.annotate(
+            f"{p['freq_hz']:.2f} Hz\n({p['bpm']:.0f} bpm)",
+            xy=(p['freq_hz'], p['power']),
+            xytext=(p['freq_hz'] + 0.05, p['power'] * 0.92),
+            fontsize=7, color=color, fontweight='bold',
+            arrowprops=dict(arrowstyle='->', color=color, lw=0.8),
+        )
+        ax_f.axvline(p['freq_hz'], color=color, lw=0.7, linestyle=':', alpha=0.5)
+
+
 def launch_fft(ctx, center_t):
     if ctx.cache is None:
         return
@@ -74,7 +91,7 @@ def launch_fft(ctx, center_t):
         freqs, power = r["freqs"], r["power"]
         if len(freqs) > 0:
             ax_f.plot(freqs, power, color=r["color"], lw=1.5)
-            pl.annotate_fft_peaks(ax_f, freqs, power, r["color"])
+            _annotate_fft_peaks(ax_f, freqs, power, r["color"])
         tfs_f, lfs_f, _ = fig_font_sizes(fig_fft)
         ax_f.set_ylabel("Power", fontweight='bold', fontsize=lfs_f)
         ax_f.set_title(r["channel"], fontweight='bold', fontsize=tfs_f)

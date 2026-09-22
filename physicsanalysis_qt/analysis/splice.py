@@ -25,6 +25,15 @@ every applied splice in order — see remove_splice()/open_splice_manager
 for reviewing or removing one without discarding the rest, and
 restore_full_recording() for discarding all of them at once.
 
+For TDT, Cut Out additionally re-runs motion/bleaching correction (via
+PhysicsLibrary's compute_dff) on the stitched raw signal, instead of
+just cutting the already-computed dF/F trace along with everything
+else — removing an artifact can genuinely improve the correction for
+the rest of the recording (the artifact was dragging the fit before
+this), not just shorten the view of the old one. Keep Inside stays a
+plain trim with no recompute, on purpose: a short trimmed window
+doesn't have enough data for a stable refit (see _splice_once).
+
 Works on TDT, Oxysoft, and Generic sources alike — each has a different
 cache shape (TDT: raw/corr + optional per-wavelength 'signals'; Oxysoft:
 2D o2hb/hhb/optional-thb detector arrays; Generic: a y_columns dict of
@@ -71,14 +80,16 @@ class _SpliceModePickerDialog(QDialog):
             "on the graph to mark the range."
         ))
 
-        self.rb_keep = QRadioButton("Keep only this range")
-        self.rb_keep.setChecked(True)
+        # Cut Out listed first and checked by default — removing an
+        # artifact is the more common use case than trimming to a range.
         self.rb_cut = QRadioButton("Cut out this range (remove an artifact, stitch the rest together)")
+        self.rb_cut.setChecked(True)
+        self.rb_keep = QRadioButton("Keep only this range")
         mode_group = QButtonGroup(self)
-        mode_group.addButton(self.rb_keep)
         mode_group.addButton(self.rb_cut)
-        layout.addWidget(self.rb_keep)
+        mode_group.addButton(self.rb_keep)
         layout.addWidget(self.rb_cut)
+        layout.addWidget(self.rb_keep)
 
         btn_row = QHBoxLayout()
         btn_ok = QPushButton("Start Clicking…")
@@ -118,7 +129,7 @@ def start_splice_flow(ctx):
     return True
 
 
-def _splice_once(source_cache, mode, start, end):
+def _splice_once(source_cache, mode, start, end, regression_method="ols"):
     """Pure computation: apply one splice to source_cache, returning the
     new spliced cache dict, or None if the range isn't usable. No ctx
     mutation, no toast/redraw — shared by _apply_splice (one interactive
@@ -130,7 +141,11 @@ def _splice_once(source_cache, mode, start, end):
     funnel every source-specific array through PhysicsLibrary's
     extra_channels (sliced along each array's own last axis, so Oxysoft's
     2D per-detector arrays and Generic's 1D columns both just work) so
-    the trim/cut-and-stitch math itself lives in exactly one place."""
+    the trim/cut-and-stitch math itself lives in exactly one place.
+
+    regression_method only matters for TDT's Cut Out path (see below) —
+    unused by Keep Inside and by Oxysoft/Generic, which have no
+    correction pipeline of their own to re-run."""
     splice_fn = pl.splice_cut_out if mode == MODE_CUT_OUT else pl.splice_keep_inside
     source = source_cache.get('source')
     x = source_cache['x']
@@ -152,15 +167,35 @@ def _splice_once(source_cache, mode, start, end):
         if result is None:
             return None
 
+        raw_out, corr_out = result['raw'], result['corr']
+
+        # Cut Out only: removing an artifact and re-running motion/
+        # bleaching correction on the stitched remainder can give a
+        # genuinely better fit than the original one (fit before this
+        # cut was made, so the artifact could still be dragging it) —
+        # not just a shorter view of the same fit. Keep Inside stays a
+        # plain trim (no recompute — see the module the recompute call
+        # goes through, PhysicsLibrary.compute_dff, and the earlier
+        # decision not to do this for a short trimmed window at all).
+        # Only possible when the raw main-driver channel survived the
+        # splice above (every TDT recording has one — see
+        # process_tdt_folder — so this is really just a defensive check).
+        if mode == MODE_CUT_OUT and 'main_driver' in result['extra_channels']:
+            y_465 = result['extra_channels']['main_driver']
+            y_415 = result['extra_channels'].get('isosbestic')
+            computed = pl.compute_dff(y_465, y_415, source_cache['fs'],
+                                       regression_method=regression_method)
+            raw_out, corr_out = computed['raw'], computed['corr']
+
         spliced = dict(source_cache)
         spliced['x'] = result['x']
-        spliced['raw'] = result['raw']
-        spliced['corr'] = result['corr']
+        spliced['raw'] = raw_out
+        spliced['corr'] = corr_out
         spliced['markers'] = result['markers']
         spliced['detected_markers'] = result['detected_markers']
         if source_signals:
             spliced['signals'] = {
-                key: {**sig, 'y': result['corr'] if key == 'normalized' else result['extra_channels'][key]}
+                key: {**sig, 'y': corr_out if key == 'normalized' else result['extra_channels'][key]}
                 for key, sig in source_signals.items()
             }
         return spliced
@@ -232,10 +267,11 @@ def _apply_splice(ctx, mode, start, end, announce=True):
     save_splice() and later reviewed/removed via remove_splice()."""
     from ..plotting import simple_plot
 
-    spliced = _splice_once(ctx.cache, mode, start, end)
+    regression_method = ctx.settings.get("regression_method", "ols")
+    spliced = _splice_once(ctx.cache, mode, start, end, regression_method=regression_method)
     if spliced is None:
         if announce:
-            msg = ("Can't cut that range — need usable signal on both sides of the cut."
+            msg = ("Can't cut that range — at least 2 samples need to remain."
                    if mode == MODE_CUT_OUT else
                    "That range doesn't contain enough samples to analyze.")
             show_error(ctx, msg)
@@ -253,9 +289,12 @@ def _apply_splice(ctx, mode, start, end, announce=True):
     simple_plot(ctx)
     if announce:
         n_samples = len(spliced['x'])
-        verb = f"Cut out {start:.1f}s–{end:.1f}s, {n_samples} samples remain" \
-            if mode == MODE_CUT_OUT else \
-            f"Spliced to {start:.1f}s–{end:.1f}s ({n_samples} samples)"
+        if mode == MODE_CUT_OUT:
+            verb = f"Cut out {start:.1f}s–{end:.1f}s, {n_samples} samples remain"
+            if ctx.cache.get('source') == 'TDT':
+                verb += f" — {regression_method.upper()} dF/F recomputed on the result"
+        else:
+            verb = f"Spliced to {start:.1f}s–{end:.1f}s ({n_samples} samples)"
         show_window_toast(ctx, verb)
     return True
 
@@ -263,9 +302,20 @@ def _apply_splice(ctx, mode, start, end, announce=True):
 def apply_splice_at_points(ctx, t1, t2):
     """Called once two points have been clicked in Splice mode — applies
     immediately using the mode chosen in start_splice_flow, no further
-    dialog."""
+    dialog.
+
+    Each click is clamped to the recording's own time range first — none
+    of the three plot engines (interaction.py/pg_interaction.py/
+    vispy_interaction.py) restrict clicks to where data actually is, only
+    to the visible axes area, so a click past either edge (e.g. trying to
+    grab "the very start" but landing slightly before it) would otherwise
+    hand this an out-of-range time instead of the boundary sample the
+    user clearly meant."""
     ctx.splice_click_mode = False  # the flow that started with start_splice_flow() is done
-    mode = getattr(ctx, '_pending_splice_mode', None) or MODE_KEEP_INSIDE
+    mode = getattr(ctx, '_pending_splice_mode', None) or MODE_CUT_OUT
+    x = ctx.cache['x']
+    t1 = min(max(t1, x[0]), x[-1])
+    t2 = min(max(t2, x[0]), x[-1])
     start, end = sorted((t1, t2))
     _apply_splice(ctx, mode, start, end)
 
@@ -292,9 +342,10 @@ def remove_splice(ctx, index):
         restore_full_recording(ctx)
         return True
 
+    regression_method = ctx.settings.get("regression_method", "ols")
     cache = ctx.original_cache
     for s in remaining:
-        cache = _splice_once(cache, s["mode"], s["start"], s["end"])
+        cache = _splice_once(cache, s["mode"], s["start"], s["end"], regression_method=regression_method)
         if cache is None:
             show_error(ctx, "Removing that splice makes an earlier range invalid — "
                              "try removing a different one, or Restore Full Recording.")

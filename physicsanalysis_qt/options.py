@@ -25,9 +25,9 @@ _ENGINE_LABELS = {
 _ENGINE_VALUES = {v: k for k, v in _ENGINE_LABELS.items()}
 
 _REGRESSION_LABELS = {
-    "ransac": "RANSAC (default — excludes severe artifacts entirely)",
+    "ols":    "OLS (default — plain least-squares, no robustness)",
+    "ransac": "RANSAC (excludes severe artifacts entirely)",
     "huber":  "Huber (downweights outliers instead of excluding them)",
-    "ols":    "OLS (no robustness — plain least-squares)",
 }
 _REGRESSION_VALUES = {v: k for k, v in _REGRESSION_LABELS.items()}
 
@@ -74,12 +74,16 @@ class OptionsDialog(QDialog):
         self.combo_regression = QComboBox()
         self.combo_regression.addItems(list(_REGRESSION_LABELS.values()))
         self.combo_regression.setCurrentText(
-            _REGRESSION_LABELS[ctx.settings.get("regression_method", "ransac")])
+            _REGRESSION_LABELS[ctx.settings.get("regression_method", "ols")])
         gr.addWidget(self.combo_regression, 0, 1)
         regression_note = QLabel(
             "Used to regress the isosbestic (415nm) stream onto the signal (465nm)\n"
             "stream during motion correction. Takes effect on the next TDT folder\n"
-            "load/reload — an already-loaded recording isn't reprocessed."
+            "load/reload — an already-loaded recording isn't reprocessed.\n"
+            "The three methods can give noticeably different results on the same\n"
+            "recording (e.g. how much of a transient near a motion artifact survives) —\n"
+            "worth reloading with each one to see what you actually get before\n"
+            "settling on one for a given dataset."
         )
         regression_note.setStyleSheet("color: gray;")
         regression_note.setWordWrap(True)

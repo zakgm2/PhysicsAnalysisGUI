@@ -122,9 +122,12 @@ class UpdateCheckWorker(QThread):
     """Emits exactly one dict once the PhysicsAnalysis check settles
     (PhysicsLibrary is checked too, but only PhysicsAnalysis being
     outdated is worth surfacing — see the module docstring):
-        {"outdated": True, "message": str, "url": str}
-            — caller should call splash.prompt_update(message, url)
-              instead of launching straight through.
+        {"outdated": True, "message": str}
+            — caller should call splash.prompt_update(message) instead
+              of launching straight through. Where "Download Update"
+              actually goes is splash.DOWNLOAD_PAGE_URL, a fixed
+              landing page — not tied to whatever release URL this
+              check happened to find, so it's not threaded through here.
         {"outdated": False}
             — nothing to offer, launch normally. This is also exactly
               what happens with no internet connection at all: every
@@ -160,7 +163,6 @@ class UpdateCheckWorker(QThread):
                 "outdated": True,
                 "message": (f"A newer version of Physics Analysis GUI is available "
                             f"(v{analysis['remote']} — you have v{analysis['local']})."),
-                "url": analysis["url"],
             })
         else:
             self.checked.emit({"outdated": False})

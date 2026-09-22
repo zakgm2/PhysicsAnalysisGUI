@@ -14,6 +14,7 @@ import PhysicsLibrary as pl
 
 from ..background import run_in_background
 from ..sidecar import load_markers_from_sidecar
+from ..analysis.splice import load_splice_from_sidecar
 from ..plot_signal import refresh_plot_signal_options
 from ..toasts import show_error, show_success, show_window_toast
 
@@ -46,6 +47,10 @@ def _load_single_file(ctx, file_path):
         n_ch = ds.metadata.get('n_channels', ds.num_channels // 2)
         o2hb = ds.signals[:n_ch]
         hhb = ds.signals[n_ch:]
+        # A stale splice from whatever was loaded before this must not
+        # carry over — see loaders/tdt.py's identical reset for why.
+        ctx.original_cache = None
+        ctx._active_splices = []
         ctx._data_generation += 1
         ctx.cache = {
             'source':          'Oxysoft',
@@ -66,6 +71,9 @@ def _load_single_file(ctx, file_path):
         if 'thb' in ds.metadata:
             ctx.cache['thb'] = ds.metadata['thb']
 
+        # Splice must replay before markers load — see loaders/tdt.py's
+        # identical ordering and its comment for why.
+        load_splice_from_sidecar(ctx)
         load_markers_from_sidecar(ctx)
         refresh_plot_signal_options(ctx)  # no 'signals' map here — hides the Plot dropdown
         simple_plot(ctx)

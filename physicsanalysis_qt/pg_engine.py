@@ -26,6 +26,8 @@ import pyqtgraph as pg
 import pyqtgraph.exporters  # noqa: F401 — registers pg.exporters.ImageExporter
 from PyQt6.QtCore import Qt
 
+import PhysicsLibrary as pl
+
 from .context import export_file, get_active_signal
 from .fonts import scaled_plot_font_sizes
 from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
@@ -256,10 +258,10 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
             _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
-        _add_line(x, o2hb.mean(axis=0), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
-        _add_line(x, hhb.mean(axis=0), '#0033CC', 2, f'Mean HHb{ff_tag}')
+        _add_line(x, pl.mean_channels(o2hb), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
+        _add_line(x, pl.mean_channels(hhb), '#0033CC', 2, f'Mean HHb{ff_tag}')
         if 'thb' in cache:
-            _add_line(x, cache['thb'].mean(axis=0), '#228B22', 2, f'Mean tHb{ff_tag}')
+            _add_line(x, pl.mean_channels(cache['thb']), '#228B22', 2, f'Mean tHb{ff_tag}')
         y_label, title = "Delta Concentration (uM)", f"NIRS — {cache['store']}"
         x_label = "Time (s)"
     elif cache.get('source') == 'Generic':

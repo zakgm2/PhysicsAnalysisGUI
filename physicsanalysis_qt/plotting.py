@@ -9,6 +9,8 @@ after any redraw, and export_canvas_action() saves the current view.
 import numpy as np
 import matplotlib.transforms as transforms
 
+import PhysicsLibrary as pl
+
 from .context import export_file, get_active_signal
 from .fonts import main_plot_scale
 from .theme import mpl_colors
@@ -231,15 +233,15 @@ def simple_plot(ctx, draw_now=True):
             decim_lines.append((ln, x, hhb[i]))
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
-        mean_o2hb = o2hb.mean(axis=0)
+        mean_o2hb = pl.mean_channels(o2hb)
         ln, = ax.plot(x, mean_o2hb, color='#CC0000', lw=2.0, label=f'Mean O2Hb{ff_tag}')
         decim_lines.append((ln, x, mean_o2hb))
-        mean_hhb = hhb.mean(axis=0)
+        mean_hhb = pl.mean_channels(hhb)
         ln, = ax.plot(x, mean_hhb, color='#0033CC', lw=2.0, label=f'Mean HHb{ff_tag}')
         decim_lines.append((ln, x, mean_hhb))
         if 'thb' in cache:
             thb = cache['thb']
-            mean_thb = thb.mean(axis=0)
+            mean_thb = pl.mean_channels(thb)
             ln, = ax.plot(x, mean_thb, color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
             decim_lines.append((ln, x, mean_thb))
         y_label = "Delta Concentration (uM)"

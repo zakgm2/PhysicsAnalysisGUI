@@ -61,8 +61,8 @@ def main():
     # comparison against a fetched remote version, never as a fallback
     # for a failed check — see UpdateCheckWorker's own docstring.
     if update_result.get("outdated"):
-        if not splash.prompt_update(update_result["message"], update_result["url"]):
-            return  # Download Update was clicked; prompt_update already closed the splash
+        if not splash.prompt_update(update_result["message"]):
+            return  # Download Update or the corner X was clicked; prompt_update already closed the splash
     ctx._update_check_worker = update_worker  # keeps it alive if it's still running past the timeout
 
     build_main_window(ctx)

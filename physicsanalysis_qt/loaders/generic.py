@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
 
 import PhysicsLibrary as pl
 
+from ..sidecar import load_markers_from_sidecar
+from ..analysis.splice import load_splice_from_sidecar
 from ..plot_signal import refresh_plot_signal_options
 from ..toasts import show_error, show_success
 
@@ -125,6 +127,10 @@ class GenericLoaderDialog(QDialog):
 
         fs = pl.estimate_sample_rate(x_data) if len(x_data) > 1 else 1.0
 
+        # A stale splice from whatever was loaded before this must not
+        # carry over — see loaders/tdt.py's identical reset for why.
+        self.ctx.original_cache = None
+        self.ctx._active_splices = []
         self.ctx._data_generation += 1
         self.ctx.cache = {
             "source":      "Generic",
@@ -136,6 +142,10 @@ class GenericLoaderDialog(QDialog):
             "fs":          fs,
             "markers":     [],
         }
+        # Splice must replay before markers load — see loaders/tdt.py's
+        # identical ordering and its comment for why.
+        load_splice_from_sidecar(self.ctx)
+        load_markers_from_sidecar(self.ctx)
         refresh_plot_signal_options(self.ctx)  # no 'signals' map here — hides the Plot dropdown
         self.accept()
         simple_plot(self.ctx)

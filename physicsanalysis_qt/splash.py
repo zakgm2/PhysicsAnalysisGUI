@@ -36,7 +36,7 @@ Usage (see run_qt.py):
     splash.show()
     ... do the slow setup ...
     if outdated:
-        keep_going = splash.prompt_update(message, url)
+        keep_going = splash.prompt_update(message)
         if not keep_going:
             return  # Download Update or the corner X was clicked; splash already closed itself
     splash.finish(main_window)
@@ -54,6 +54,11 @@ from PyQt6.QtWidgets import (
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
 LOGO_PATH = os.path.join(ASSETS_DIR, "icon.png")
+
+# Where "Download Update" sends you — always this landing page, not
+# wherever UpdateCheckWorker happened to find the release (GitHub's raw
+# release page, or the repo itself as a last resort) — see prompt_update.
+DOWNLOAD_PAGE_URL = "https://zakgm2.github.io/projects/physicsanalysisgui"
 
 _BG = "#ffffff"  # Continue Anyway button's own fill — stays light for contrast on a dark card
 _LOGO_BG = "#000000"  # backs the logo page's silhouette mask
@@ -243,7 +248,7 @@ class SplashScreen(QWidget):
         self._center_on_screen()
 
     def _show_update_page(self):
-        """Update-prompt state: opaque white card with a black border,
+        """Update-prompt state: opaque dark card with a white border,
         masked to a rounded rect — this page has real text/buttons on it
         that need a solid, legible rectangular background under them,
         unlike the logo-silhouette mask the plain-logo state uses."""
@@ -309,7 +314,7 @@ class SplashScreen(QWidget):
         loop.exec()
         self.setWindowOpacity(1.0)
 
-    def prompt_update(self, message, url):
+    def prompt_update(self, message):
         """Swaps this window from the plain logo to the update-available
         message + buttons, in place — no second window, so there's no
         way for it to end up stuck behind this one (WindowStaysOnTopHint
@@ -317,14 +322,15 @@ class SplashScreen(QWidget):
         splash, unreachable — that's what made update checks feel hung).
 
         Blocks (via a nested event loop, same pattern as finish()) until
-        one of three things is clicked. "Download Update" opens the
-        release page and closes this splash the same way finish() would.
-        The corner "✕" also closes it, but skips opening anything — for
-        someone who just wants out, not an update and not this version
-        either. Either way the caller should exit right after, same as
-        if the app had launched and then closed normally. "Continue
-        Anyway" swaps back to the logo page and returns control to the
-        caller, which should carry on with a normal launch.
+        one of three things is clicked. "Download Update" opens
+        DOWNLOAD_PAGE_URL and closes this splash the same way finish()
+        would. The corner "✕" also closes it, but skips opening
+        anything — for someone who just wants out, not an update and
+        not this version either. Either way the caller should exit
+        right after, same as if the app had launched and then closed
+        normally. "Continue Anyway" swaps back to the logo page and
+        returns control to the caller, which should carry on with a
+        normal launch.
 
         Returns True for "continue with the current version", False for
         "not continuing — download was opened, or the user just closed
@@ -355,7 +361,7 @@ class SplashScreen(QWidget):
             return True
 
         if result["outcome"] == "download":
-            QDesktopServices.openUrl(QUrl(url))
+            QDesktopServices.openUrl(QUrl(DOWNLOAD_PAGE_URL))
         self._pulse.stop()
         self.close()
         return False

@@ -53,6 +53,8 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from vispy import scene
 from vispy.color import Color
 
+import PhysicsLibrary as pl
+
 from .context import export_file, get_active_signal
 from .fonts import main_plot_scale, scaled_plot_font_sizes
 from .marker_labels import marker_display_label
@@ -215,10 +217,10 @@ def vispy_simple_plot(ctx):
             _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
-        _add_line(x, o2hb.mean(axis=0), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
-        _add_line(x, hhb.mean(axis=0), '#0033CC', 2, f'Mean HHb{ff_tag}')
+        _add_line(x, pl.mean_channels(o2hb), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
+        _add_line(x, pl.mean_channels(hhb), '#0033CC', 2, f'Mean HHb{ff_tag}')
         if 'thb' in cache:
-            _add_line(x, cache['thb'].mean(axis=0), '#228B22', 2, f'Mean tHb{ff_tag}')
+            _add_line(x, pl.mean_channels(cache['thb']), '#228B22', 2, f'Mean tHb{ff_tag}')
         y_label, title_text = "Delta Concentration (uM)", f"NIRS — {cache['store']}"
         x_label = "Time (s)"
     elif cache.get('source') == 'Generic':

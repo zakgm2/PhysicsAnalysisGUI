@@ -61,7 +61,7 @@ def default_settings():
         "background_loading":  True,
         "plot_engine":         "matplotlib",  # "matplotlib" | "pyqtgraph" | "vispy"
         "theme":               "light",       # "light" | "dark"
-        "regression_method":   "ransac",      # "ransac" | "huber" | "ols" — TDT motion correction, see PhysicsLibrary.REGRESSION_METHODS
+        "regression_method":   "ols",         # "ransac" | "huber" | "ols" — TDT motion correction, see PhysicsLibrary.REGRESSION_METHODS
     }
 
 

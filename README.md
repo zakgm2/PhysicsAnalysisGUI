@@ -112,6 +112,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 2.13.0 | Splice's Cut Out now recomputes dF/F (motion + bleaching correction) on the stitched TDT signal instead of just cutting the old trace; Open Data Folder detects multiple TDT recordings in one directory (Single Experiment Analysis vs Hypothesis Testing placeholder); fixed saved markers/splices being silently lost or corrupted on reload (TDT/Oxysoft/Generic) and Splice failing at recording borders; default motion-correction regression changed from RANSAC to OLS; Splice's mode picker now defaults to Cut Out |
 | 2.12.1 | Loading screen redesign (just the logo, no card), update-available prompt now lives on the splash itself instead of a separate popup, fixed a real bug where that popup could open behind the always-on-top splash and get stuck |
 | 2.12.0 | AUC analysis, Custom Statistics picker, Event PETH "Trials" overlay view, Splice now works on Oxysoft/Generic, RANSAC/Huber/OLS motion-correction choice, Output Folder option, shared export buttons everywhere, marker hit-testing scales with zoom |
 | 2.11.3 | Update check no longer forces a wall — "Continue Anyway" launches the current version, "Download Update" opens the release page and exits |
