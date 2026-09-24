@@ -1,17 +1,66 @@
 """
 attributes.py
 -------------
-Edit Attributes dialog: title/label text and font sizes, legend font
-size/position, per-legend-entry show/hide + rename, and grid visibility.
+Edit Attributes dialog: title/label text and font sizes, per-trace line
+colors, legend font size/position, per-legend-entry show/hide + rename, and
+grid visibility. Line colors are picked with color_picker.py's
+hue/saturation field and stored in plot_attrs["line_colors"], which every
+plotting engine reads through context.trace_color().
 """
 
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox, QLabel,
     QLineEdit, QComboBox, QCheckBox, QPushButton,
 )
 
 from . import plotting
+from .color_picker import pick_color
 from .interaction import _refresh_hover_bg
+from .window_fit import scroll_body, fit_dialog_to_content
+
+
+class _ColorRow:
+    """One trace's line-color state in the Line Colors section: a swatch
+    that opens the picker, and a Reset button. `orig` is the trace's raw
+    (un-renamed) name — what plot_attrs["line_colors"] is keyed by — and
+    `name` is what to call it in the UI."""
+
+    def __init__(self, dialog, orig, name, default_color, override):
+        self.dialog = dialog
+        self.orig = orig
+        self.name = name
+        self.default_color = QColor(default_color).name()
+        self.override = override  # "#rrggbb" or None (= the engine's default color)
+
+        self.color_btn = QPushButton()
+        self.color_btn.setFixedSize(60, 22)
+        self.color_btn.setToolTip("Choose this line's color")
+        self.color_btn.clicked.connect(self._pick)
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setToolTip("Back to the default color")
+        self.reset_btn.clicked.connect(self._reset)
+        self._refresh()
+
+    @property
+    def color(self):
+        return self.override or self.default_color
+
+    def _refresh(self):
+        self.color_btn.setStyleSheet(
+            f"background-color: {self.color}; border: 1px solid #666;")
+        self.reset_btn.setEnabled(self.override is not None)
+
+    def _pick(self):
+        picked = pick_color(self.dialog, QColor(self.color), f"Line Color — {self.name}")
+        if picked is not None:
+            # Picking the default color back is the same as having no override.
+            self.override = None if picked.name() == self.default_color else picked.name()
+            self._refresh()
+
+    def _reset(self):
+        self.override = None
+        self._refresh()
 
 
 class AttributesDialog(QDialog):
@@ -25,7 +74,10 @@ class AttributesDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Edit Graph Attributes")
-        layout = QVBoxLayout(self)
+        # One row per legend entry below, so this grows with the dataset
+        # (many Oxysoft channels / CSV columns) — scrolls instead of
+        # outgrowing the screen. See window_fit.py.
+        outer, layout, body = scroll_body(self)
 
         plot_attrs = ctx.plot_attrs
         cur_title = plot_attrs["title"] or ctx._last_title
@@ -33,7 +85,7 @@ class AttributesDialog(QDialog):
         cur_ylabel = plot_attrs["ylabel"] or ctx._last_ylabel
 
         # Labels & font sizes
-        lf = QGroupBox("Labels & Font Sizes")
+        lf = QGroupBox("Labels && Font Sizes")  # && — a single & is Qt's shortcut marker
         grid = QGridLayout(lf)
         self.e_title, self.e_title_fs = self._row(grid, 0, "Title:", cur_title, plot_attrs["title_fs"])
         self.e_xlabel, self.e_xlabel_fs = self._row(grid, 1, "X Label:", cur_xlabel, plot_attrs["xlabel_fs"])
@@ -45,6 +97,34 @@ class AttributesDialog(QDialog):
         self.cb_grid.setChecked(ctx.show_grid)
         grid.addWidget(self.cb_grid, 3, 2, 1, 2)
         layout.addWidget(lf)
+
+        entries = list(ctx._legend_entries)
+        saved_entry_map = {}
+        if plot_attrs["leg_entries"]:
+            saved_entry_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
+
+        # Line colors — one row per plotted trace, independent of whether
+        # (or under what name) it shows in the legend below.
+        lc = QGroupBox("Line Colors")
+        lc_layout = QVBoxLayout(lc)
+        self.color_rows = []  # one _ColorRow per trace
+        if entries:
+            color_grid = QGridLayout()
+            color_grid.setColumnStretch(0, 1)
+            for i, l in enumerate(entries):
+                row = _ColorRow(self, l, saved_entry_map.get(l, (l, True))[0],
+                                ctx._trace_default_colors.get(l, "#808080"),
+                                plot_attrs["line_colors"].get(l))
+                color_grid.addWidget(QLabel(row.name), i, 0)
+                color_grid.addWidget(row.color_btn, i, 1)
+                color_grid.addWidget(row.reset_btn, i, 2)
+                self.color_rows.append(row)
+            lc_layout.addLayout(color_grid)
+        else:
+            no_lines = QLabel("No lines found — load data first.")
+            no_lines.setStyleSheet("color: gray;")
+            lc_layout.addWidget(no_lines)
+        layout.addWidget(lc)
 
         # Legend
         lf2 = QGroupBox("Legend")
@@ -61,11 +141,6 @@ class AttributesDialog(QDialog):
         top_row.addWidget(self.leg_loc_combo)
         top_row.addStretch(1)
         lf2_layout.addLayout(top_row)
-
-        entries = list(ctx._legend_entries)
-        saved_entry_map = {}
-        if plot_attrs["leg_entries"]:
-            saved_entry_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
 
         self.entry_widgets = []  # (checkbox, lineedit, original_label)
         if entries:
@@ -96,7 +171,9 @@ class AttributesDialog(QDialog):
         cancel_btn.clicked.connect(self.reject)
         btn_row.addWidget(apply_btn)
         btn_row.addWidget(cancel_btn)
-        layout.addLayout(btn_row)
+        outer.addLayout(btn_row)
+
+        fit_dialog_to_content(self, body)
 
     def _row(self, grid, row, label_text, default_text, default_size):
         grid.addWidget(QLabel(label_text), row, 0)
@@ -138,10 +215,25 @@ class AttributesDialog(QDialog):
                 for cb, le, orig_l in self.entry_widgets
             ]
 
+        # Only touches the traces listed here — picks made for other
+        # datasets earlier in the session stay put.
+        colors_changed = False
+        line_colors = plot_attrs["line_colors"]
+        for row in self.color_rows:
+            if line_colors.get(row.orig) != row.override:
+                colors_changed = True
+            if row.override:
+                line_colors[row.orig] = row.override
+            else:
+                line_colors.pop(row.orig, None)
+
         plotting.set_grid_visibility(ctx, self.cb_grid.isChecked())
 
-        if ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
-            plotting.simple_plot(ctx)  # neither has an incremental "apply" — full rebuild
+        # Colors are baked into each line when it's drawn, so a color change
+        # needs a redraw on every engine; matplotlib's cheaper in-place
+        # attribute refresh is only enough when nothing about the lines moved.
+        if colors_changed or ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
+            plotting.simple_plot(ctx)  # pyqtgraph/vispy have no incremental "apply" — full rebuild
         else:
             plotting._apply_plot_attrs(ctx)
             _refresh_hover_bg(ctx)

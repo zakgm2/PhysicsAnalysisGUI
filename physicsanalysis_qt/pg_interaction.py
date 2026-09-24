@@ -101,7 +101,7 @@ def on_pg_mouse_clicked(ctx, ev):
             _right_click_marker_menu(ctx, x, ev.screenPos(), tol_s)
         return
 
-    if ctx.plot_type_combo.currentText() == "Curve Fit" and ev.button() == Qt.MouseButton.LeftButton:
+    if ctx.analysis_mode == "Curve Fit" and ev.button() == Qt.MouseButton.LeftButton:
         if not ctx.pg_lines:
             return
         # Pick whichever tracked line is closest in y to the click, same

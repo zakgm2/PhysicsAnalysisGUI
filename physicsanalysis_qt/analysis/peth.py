@@ -2,8 +2,8 @@
 analysis/peth.py
 -------------------
 Z-Score window analysis — same click-triggered dispatch as FFT/AUC
-(double-click near a point with "Z-Score" selected in the toolbar's
-plot-type combo). Not a PETH (peri-event time histogram, which averages
+(double-click near a point after picking "Z-Score" from the toolbar's
+Analysis button). Not a PETH (peri-event time histogram, which averages
 many occurrences of one event) — this analyzes a single clicked point;
 see analysis/event_peth.py for the real multi-trial version. Mirrors
 auc.py's per-source branching (Oxysoft dual/triple-channel vs.
@@ -26,7 +26,9 @@ import PhysicsLibrary as pl
 from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_error, show_window_toast
+from .analysis_picker import add_done_button
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
+from ..window_fit import fit_to_screen
 
 
 def launch_zscore_peth(ctx, center_t):
@@ -76,7 +78,7 @@ def launch_zscore_peth(ctx, center_t):
     dlg.setWindowTitle(
         f"Z-Score Analysis — {cache['store']}  |  centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s"
     )
-    dlg.resize(700, 650)
+    fit_to_screen(dlg, 700, 650)
     layout = QVBoxLayout(dlg)
 
     n = len(results)
@@ -132,6 +134,7 @@ def launch_zscore_peth(ctx, center_t):
     btn_export = QPushButton("Export Plot")
     btn_export.clicked.connect(lambda: export_figure_to_file(ctx, fig, "ZScore", f"{int(center_t)}s"))
     btn_row.addWidget(btn_export)
+    add_done_button(ctx, dlg, btn_row)
     layout.addLayout(btn_row)
 
     show_window_toast(ctx, f"Z-Score computed at {center_t:.1f}s")

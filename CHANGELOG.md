@@ -1,4 +1,42 @@
-# Changelog — Physics Analysis GUI
+# Changelog — PyAT (Python Analysis Tool)
+
+---
+
+## v3.0.0
+**Changed: the app is now PyAT (Python Analysis Tool)** — a new major version because the name changed; nothing about how existing recordings, sidecar files or saved settings work was broken by it.
+- Renamed everywhere a user sees it: the window title, the citation and update-available text, the README / `packaging/` / `MACOS_INSTALL.md` docs, and the built artifacts — CI now produces `PyAT.exe` (Windows) and `PyAT.app` (macOS) and names the release assets to match (`PhysicsAnalysis.spec` builds with `name='PyAT'`; the spec file's own name is unchanged). The desktop launcher shortcut is now `Python Analysis Tool.lnk`.
+- Deliberately *not* renamed, so nothing that already exists breaks: the `physicsanalysis_qt` package, the GitHub repo/URLs, the `~/.physicsanalysis` settings folder (saved settings carry straight over), the `PhysicsAnalysis.spec` filename, the `PhysicsAnalysisGUI` distribution name, and the macOS bundle id.
+- Now requires `ZaksPhysicsLibrary>=2026.9.22`.
+- Loading screen: new logo (`assets/AppIcon.png` — the magpie in a shield, with the PyAT wordmark), used on the splash only. Its silhouette now gets a 1px white outline instead of a black backing: the artwork is dark, so the old black backing made it vanish on a dark desktop. The window/taskbar/exe icon stays the original red shield (`icon.png` / `icon.ico`, unchanged).
+
+**New: the Analysis dropdown is now an Analysis button**
+- The toolbar's "Analysis ▾" dropdown (Z-Score / FFT / AUC / Curve Fit) and the separate top-bar "Window: Ns" button are replaced by one **Analysis** button that opens a menu, like Custom Statistics does (`physicsanalysis_qt/analysis/analysis_picker.py`). Pick Z-Score PETH, FFT, AUC or Curve Fit and a toast says what to do on the graph (double-click the point — Curve Fit: click two points). A picked tool is armed for **one run**, then disarms itself, like Splice. The analysis window setting (seconds either side of the click) now lives inside this menu instead of the top bar.
+- **Persist through trials** (checkbox at the top of the menu): the tool stays armed after each run, so you can go from trial to trial by double-clicking each in turn. While it's ticked and a tool is armed, a **Done** panel sits in the window's bottom-left corner — press it to stop. Each analysis graph window (FFT, Z-Score PETH, AUC, Curve Fit) also has a **Done** button at the bottom: it closes the window and turns the tool off, while closing it with the X leaves a persistent tool armed for the next trial. With the checkbox unticked there is no panel — the tool just runs once.
+- Going back to the Analysis menu cancels whatever was armed, so closing it with the X returns you to the plain plot. The selected tool is shown on the button ("Analysis: FFT", in the same armed yellow Add Marker uses).
+- Internal: `ctx.analysis_mode` (None, or the armed tool's name) replaces `ctx.plot_type_combo`, which no longer exists; `analysis/window_settings.py` no longer owns a toolbar button.
+
+**New: per-trace line colors in Edit Attributes**
+- A new **Line Colors** group: one row per plotted trace with a color swatch and a Reset button. Clicking a swatch opens a continuous color picker (`physicsanalysis_qt/color_picker.py`) — a hue/saturation rectangle with a circle pointer, a vertical darkness slider on its left (the whole rectangle darkens live as it moves), a hex field, and an old-vs-new preview.
+- Applies on all three plot engines (matplotlib, PyQtGraph, VisPy — including VisPy's legend swatch) and survives switching the Plot dropdown, including into and out of Overlay All. Oxysoft's per-channel lines follow their group's single legend entry. Picks are keyed by the trace's original name (renaming a legend entry never loses one) and, like the other attributes, last for the session. Every engine resolves trace colors through one helper, `context.trace_color()`.
+
+**New: "Tools" title on the left sidebar**
+- The sidebar now has a bold "Tools" title beside its collapse arrow. Collapsed, it shrinks to a slim tab with "Tools" written sideways down the middle (clickable, like the arrow), following the light/dark theme.
+
+**New: windows and dialogs fit small screens**
+- The Options dialog used a hard-coded size that didn't fit small displays. Options, Edit Attributes, Add Marker and Compare Fields now scroll and size themselves to their content, never exceeding the screen; the analysis, loader, splice and study windows (FFT, Z-Score, AUC, Curve Fit, Event PETH, Peak Finder, Intervals, Custom Statistics, the Generic/PT2 loaders, and so on) open at a size capped to a fraction of the available screen, and so does the main window (up to 95% of it). The handful of tiny fixed-size dialogs are left as they were (`physicsanalysis_qt/window_fit.py`).
+
+**Changed: one notification toast at a time**
+- Toasts (bottom-right) used to pile up on top of each other, each only dismissing itself on its own timer. A new toast now replaces the one on screen immediately, and an older toast's timer can no longer cut a newer one short. The Done panel above is separate (bottom-left) and never replaced by a toast.
+
+**Fixed: PyQtGraph lines and legend piling up when switching the Plot signal**
+- Switching from **Overlay All** to a single signal left the other overlay lines (and their legend rows) drawn on top: the in-place fast path used for single-to-single switches only retargeted the first line. It now applies only when exactly one trace is drawn; anything else does a full rebuild.
+- Even plain switches grew the legend by one row each time: the legend bookkeeping (`ctx._legend_entries`) was being wiped by matplotlib's canvas resize handler, which still fires for the hidden matplotlib canvas while another engine is active. The old row was then never found to remove. The row is now removed via the line item itself, and that handler does nothing unless matplotlib is the active engine — which also fixes Edit Attributes' legend-rename list coming up empty after any window resize on PyQtGraph or VisPy.
+
+**Fixed: VisPy legend**
+- Legend rows from a previous plot stayed painted underneath the new ones ("stacking" after each Plot switch); after the first redraw the legend collapsed to an empty sliver (its rows were sized before Qt had shown them); its text was invisible in dark theme (white-on-white — the canvas is always white); and every row and label got its own border. Fixed: old rows are detached immediately, rows are shown before sizing, text color is fixed, and the border is scoped to the legend itself.
+
+**Fixed**
+- Edit Attributes' "Labels & Font Sizes" group title rendered as "Labels _Font Sizes" (Qt treats a single `&` as a shortcut marker).
 
 ---
 

@@ -20,6 +20,7 @@ from ..sidecar import load_markers_from_sidecar
 from ..analysis.splice import load_splice_from_sidecar
 from ..plot_signal import refresh_plot_signal_options
 from ..toasts import show_error, show_success
+from ..window_fit import fit_to_screen
 
 
 class GenericLoaderDialog(QDialog):
@@ -33,7 +34,7 @@ class GenericLoaderDialog(QDialog):
         self.current_table = None
 
         self.setWindowTitle(f"Generic Loader — {os.path.basename(path)}")
-        self.resize(780, 540)
+        fit_to_screen(self, 780, 540)
         layout = QHBoxLayout(self)
 
         # Left: table list

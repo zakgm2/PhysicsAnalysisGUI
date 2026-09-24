@@ -30,6 +30,7 @@ from ..marker_labels import marker_display_label
 from ..toasts import show_error, show_window_toast
 from .dispatch import add_stats_export_buttons, get_window
 from .event_peth import _group_markers_by_name
+from ..window_fit import fit_to_screen
 
 _AUTO_PEAK_COLOR = "magenta"
 _MANY_PEAKS_WARNING = 300
@@ -184,7 +185,7 @@ class _AlignmentResultsDialog(QDialog):
     def __init__(self, parent, ctx, event_name, results):
         super().__init__(parent)
         self.setWindowTitle(f"Peak Alignment — {event_name}")
-        self.resize(500, 400)
+        fit_to_screen(self, 500, 400)
         layout = QVBoxLayout(self)
 
         n_found = sum(1 for r in results if r["found"])
@@ -239,7 +240,7 @@ class _ScanAllTypesResultsDialog(QDialog):
         self.ctx = ctx
         self.by_event = by_event  # {name: [result dicts]}
         self.setWindowTitle("Peak Scan — All Event Types")
-        self.resize(650, 420)
+        fit_to_screen(self, 650, 420)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(

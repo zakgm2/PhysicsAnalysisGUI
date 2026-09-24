@@ -7,13 +7,16 @@ Splice, without mutating the original in-memory recording either) —
 Rescale, Add Marker, Splice/Restore, Save Changes, Undo All Changes,
 Measure Intervals, and anywhere else this grows. Small square icon
 buttons (emoji glyphs, no external image assets needed) in a
-fixed-width vertical strip, collapsible via a small arrow handle so it
-doesn't have to stay in view.
+fixed-width vertical strip titled "Tools", collapsible via a small arrow
+handle so it doesn't have to stay in view — collapsed, it shrinks to a slim
+tab with "Tools" written sideways down the middle (click it to expand).
 """
 
-from PyQt6.QtCore import Qt
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QPushButton, QMessageBox, QMenu
-from PyQt6.QtGui import QFont
+from PyQt6.QtCore import Qt, QRect
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QMessageBox, QMenu,
+)
+from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPalette
 
 from ..interaction import reset_zoom
 from ..markers import toggle_marker_mode
@@ -25,6 +28,40 @@ from ..analysis.intervals import launch_intervals
 
 _ICON_SIZE = 44
 _HANDLE_WIDTH = 18
+_COLLAPSED_WIDTH = 30  # wide enough for the sideways "Tools" text
+
+
+class _VerticalLabel(QWidget):
+    """Text written sideways, reading bottom-to-top (the usual convention
+    for a tab on a window's left edge) — QLabel can't rotate its text.
+    Clickable, like the tab it stands in for."""
+
+    def __init__(self, text, on_click):
+        super().__init__()
+        self._text = text
+        self._on_click = on_click
+        font = self.font()
+        font.setBold(True)
+        self.setFont(font)
+        metrics = QFontMetrics(font)
+        # Rotated 90°, so it's as wide as the text is tall, and vice versa.
+        self.setFixedSize(metrics.height() + 6, metrics.horizontalAdvance(text) + 20)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Expand the Tools sidebar")
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+        painter.setPen(self.palette().color(QPalette.ColorRole.WindowText))  # follows light/dark theme
+        painter.setFont(self.font())
+        painter.translate(0, self.height())
+        painter.rotate(-90)
+        painter.drawText(QRect(0, 0, self.height(), self.width()),
+                         Qt.AlignmentFlag.AlignCenter, self._text)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._on_click()
 
 
 def _icon_button(glyph, tooltip):
@@ -39,10 +76,7 @@ def _on_splice_clicked(ctx):
     # Always starts another splice — splices stack (e.g. removing more
     # than one artifact from the same recording) instead of each new one
     # restarting from the pristine original. Calls start_splice_flow
-    # directly (rather than routing through plot_type_combo) so every
-    # click reopens the mode picker — setCurrentText("Splice") only
-    # fired the combo's changed signal the first time, since re-setting
-    # a combo to the value it's already showing is a no-op change-wise.
+    # directly so every click reopens the mode picker, even mid-splice.
     # Right-click this icon to review/remove what's already applied, or
     # restore everything.
     start_splice_flow(ctx)
@@ -89,12 +123,21 @@ def build_edit_toolbar(ctx):
     outer.setContentsMargins(0, 8, 0, 8)
     outer.setSpacing(6)
 
-    handle_row = QVBoxLayout()
+    # Header: the collapse handle, with the "Tools" title beside it.
+    header = QHBoxLayout()
+    header.setContentsMargins(0, 0, 0, 0)
+    header.setSpacing(0)
     btn_handle = QPushButton("◂")
     btn_handle.setFixedSize(_HANDLE_WIDTH, _ICON_SIZE)
-    btn_handle.setToolTip("Collapse/expand this toolbar")
-    handle_row.addWidget(btn_handle)
-    outer.addLayout(handle_row)
+    btn_handle.setToolTip("Collapse/expand the Tools sidebar")
+    header.addWidget(btn_handle)
+    title = QLabel("Tools")
+    title_font = title.font()
+    title_font.setBold(True)
+    title.setFont(title_font)
+    title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    header.addWidget(title, stretch=1)
+    outer.addLayout(header)
 
     content = QWidget()
     content_layout = QVBoxLayout(content)
@@ -148,13 +191,28 @@ def build_edit_toolbar(ctx):
     content_layout.addStretch(1)
     outer.addWidget(content, stretch=1)
 
+    # What the collapsed strip shows instead: "Tools" written sideways,
+    # centered in the strip's height. Clicking it expands the sidebar again.
+    collapsed_area = QWidget()
+    collapsed_layout = QVBoxLayout(collapsed_area)
+    collapsed_layout.setContentsMargins(0, 0, 0, 0)
+    collapsed_layout.addStretch(1)
+    collapsed_layout.addWidget(_VerticalLabel("Tools", lambda: _toggle()),
+                               alignment=Qt.AlignmentFlag.AlignHCenter)
+    collapsed_layout.addStretch(1)
+    collapsed_area.setVisible(False)
+    outer.addWidget(collapsed_area, stretch=1)
+
     state = {"expanded": True}
 
     def _toggle():
-        state["expanded"] = not state["expanded"]
-        content.setVisible(state["expanded"])
-        container.setFixedWidth(_ICON_SIZE + 12 if state["expanded"] else _HANDLE_WIDTH)
-        btn_handle.setText("◂" if state["expanded"] else "▸")
+        expanded = state["expanded"] = not state["expanded"]
+        content.setVisible(expanded)
+        title.setVisible(expanded)
+        collapsed_area.setVisible(not expanded)
+        container.setFixedWidth(_ICON_SIZE + 12 if expanded else _COLLAPSED_WIDTH)
+        btn_handle.setFixedWidth(_HANDLE_WIDTH if expanded else _COLLAPSED_WIDTH)
+        btn_handle.setText("◂" if expanded else "▸")
 
     btn_handle.clicked.connect(_toggle)
 

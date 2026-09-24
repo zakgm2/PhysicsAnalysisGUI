@@ -57,6 +57,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..toasts import show_error, show_window_toast
+from ..window_fit import fit_to_screen
 
 MODE_KEEP_INSIDE = "keep_inside"
 MODE_CUT_OUT = "cut_out"
@@ -389,7 +390,7 @@ class _SpliceManagerDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Manage Splices")
-        self.resize(440, 320)
+        fit_to_screen(self, 440, 320)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(

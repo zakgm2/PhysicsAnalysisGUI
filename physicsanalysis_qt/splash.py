@@ -53,7 +53,8 @@ from PyQt6.QtWidgets import (
 )
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-LOGO_PATH = os.path.join(ASSETS_DIR, "icon.png")
+LOGO_PATH = os.path.join(ASSETS_DIR, "icon.png")  # the app icon (red shield) — taskbar/window/exe, see app_icon()
+SPLASH_LOGO_PATH = os.path.join(ASSETS_DIR, "AppIcon.png")  # the bird logo — used ONLY on this loading screen
 
 # Where "Download Update" sends you — always this landing page, not
 # wherever UpdateCheckWorker happened to find the release (GitHub's raw
@@ -61,7 +62,10 @@ LOGO_PATH = os.path.join(ASSETS_DIR, "icon.png")
 DOWNLOAD_PAGE_URL = "https://zakgm2.github.io/projects/physicsanalysisgui"
 
 _BG = "#ffffff"  # Continue Anyway button's own fill — stays light for contrast on a dark card
-_LOGO_BG = "#000000"  # backs the logo page's silhouette mask
+# Backs the logo page's silhouette mask: it shows through only as the thin
+# ring around the logo's contour, and the logo art is dark (black + deep
+# red), so the ring has to be light to keep it readable on a dark desktop.
+_LOGO_BG = "#ffffff"
 _BORDER = "#000000"  # Continue Anyway button's own border
 _TEXT_COLOR = "#1a1a1a"  # Continue Anyway button's own (dark, on its light fill) text
 _ACCENT = "#c22626"  # matches the logo's red — used for the Download Update button
@@ -71,7 +75,7 @@ _UPDATE_BORDER = "#ffffff"  # update-prompt card border, for contrast against a 
 _UPDATE_TEXT_COLOR = "#f0f0f0"  # update-prompt message text, readable on the dark card
 
 _LOGO_HEIGHT = 250  # rendered logo pixmap height
-_SILHOUETTE_BORDER_PX = 1  # dilating this rounds off the logo's sharp spiky tips a little — see _dilate_region
+_SILHOUETTE_BORDER_PX = 1  # ring width around the logo (1 = thinnest possible); also rounds off its sharp spiky tips a little — see _dilate_region
 _LOGO_SIZE = (_LOGO_HEIGHT + 2 * _SILHOUETTE_BORDER_PX, _LOGO_HEIGHT + 2 * _SILHOUETTE_BORDER_PX)
 _CARD_MARGIN = 24  # padding between the card's border and its content — update page only
 _UPDATE_SIZE = (420, 240)
@@ -89,8 +93,10 @@ _MIN_DISPLAY_MS = 3000
 
 
 def app_icon():
-    """QIcon for the taskbar/window icon — same logo file the splash uses,
-    so both agree without a second asset to keep in sync."""
+    """QIcon for the taskbar/window icon: the plain red shield (icon.png,
+    also the source of icon.ico and the macOS icon). Deliberately not the
+    splash's logo — that's the detailed bird artwork with the "PyAT"
+    wordmark, which is only used on the loading screen."""
     return QIcon(LOGO_PATH) if os.path.exists(LOGO_PATH) else QIcon()
 
 
@@ -139,8 +145,8 @@ class SplashScreen(QWidget):
         self.logo_label = QLabel(self.card)
         self.logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.logo_label.setStyleSheet("background: transparent;")
-        if os.path.exists(LOGO_PATH):
-            pixmap = QPixmap(LOGO_PATH)
+        if os.path.exists(SPLASH_LOGO_PATH):
+            pixmap = QPixmap(SPLASH_LOGO_PATH)
             self.logo_label.setPixmap(pixmap.scaledToHeight(
                 _LOGO_HEIGHT, Qt.TransformationMode.SmoothTransformation))
 

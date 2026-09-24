@@ -1,4 +1,4 @@
-# Opening PhysicsAnalysis on Mac (first time)
+# Opening PyAT on Mac (first time)
 
 This app isn't signed with an Apple Developer certificate, so macOS
 will warn you the first time you open it. This is normal for
@@ -7,7 +7,7 @@ app. You only need to do this once.
 
 ## Steps
 
-1. Unzip the download and drag **PhysicsAnalysis.app** into your
+1. Unzip the download and drag **PyAT.app** into your
    **Applications** folder.
 2. **Don't double-click it the first time.** Instead, **right-click**
    (or Control-click) the app and choose **Open**.
@@ -20,7 +20,7 @@ app. You only need to do this once.
 Open **Terminal** and run:
 
 ```bash
-xattr -cr /Applications/PhysicsAnalysis.app
+xattr -cr /Applications/PyAT.app
 ```
 
 Then double-click the app normally.

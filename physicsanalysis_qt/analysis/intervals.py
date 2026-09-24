@@ -32,6 +32,7 @@ import PhysicsLibrary as pl
 
 from ..context import export_file
 from ..toasts import show_error, show_window_toast
+from ..window_fit import fit_to_screen
 
 
 class IntervalsDialog(QDialog):
@@ -45,7 +46,7 @@ class IntervalsDialog(QDialog):
         super().__init__(ctx.win)
         self.rows = rows
         self.setWindowTitle("Event Intervals")
-        self.resize(720, 480)
+        fit_to_screen(self, 720, 480)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(f"{len(rows)} marker(s) currently on the plot."))

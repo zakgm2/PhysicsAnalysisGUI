@@ -1,6 +1,6 @@
-# Physics Analysis GUI
+# PyAT — Python Analysis Tool
 
-A PyQt6 desktop application for loading, visualising, and analysing physics lab data.
+A general-purpose PyQt6 desktop application for loading, plotting, and analysing time-series and tabular lab data — CSV/Excel, curve fitting, FFT, peri-event analysis — with a current focus on fibre photometry.
 
 Supports TDT fibre photometry recordings, Oxysoft / Artinis NIRS exports, generic tabular data (Excel, CSV, TSV, plain text), Terranova Prospa EFNMR/MRI `.pt2` images, and grouped-text-field studies (one JSON file per subject, e.g. a survey with several free-text responses).
 
@@ -28,7 +28,7 @@ The main plot can render with **matplotlib** (CPU), **PyQtGraph** (fast CPU-side
 - **Rename stores** — right-click a marker → Rename → "Rename all" applies to every marker from that store at once (or just the one instance); the Add Marker dialog's store list supports the same inline (right-click a store, type, Enter); **Reset Name** reverts back to the raw store id
 - **Measure Intervals** — a table of every marker currently on the plot, sorted by time, with time-since-previous-in-store (on-duration for high/low pairs) and time-since-previous-any-marker columns; exportable as CSV
 - **Analysis window** — a single **Window** button opens a dialog for the pre/post seconds around an FFT/PETH/Curve Fit click: symmetric (one total size, split evenly) or asymmetric (independent before/after, e.g. 10s before, 20s after)
-- **Edit Attributes** — customise plot title, axis labels, font sizes, and legend entries; changes persist across zoom/pan/hover
+- **Edit Attributes** — customise plot title, axis labels, font sizes, legend entries, and each trace's line color (pick from a hue/saturation field with a darkness slider); changes persist across zoom/pan/hover
 - **Golden-ratio font scaling** — all figure text scales proportionally to figure/widget size and stays live during window resize, on both plot engines
 - **Grid toggle** — show/hide background grid from the toolbar
 - **TSI Fit Factor** — extracted automatically from Oxysoft files and shown in the legend
@@ -99,9 +99,9 @@ Text field studies live in their own **Text Field Study ▾** menu instead (not 
 | Rename / reset / delete all of one name | Right-click near it → Rename (with "all" toggle) / Reset Name / Delete all |
 | Rename a store inline | Add Marker → right-click a store in the list → type → Enter |
 | Measure time between events | **Measure Intervals** button |
-| Set analysis window | **Window** button → symmetric size or independent before/after |
-| Fit curve | Select **Curve Fit** mode, click two points |
-| Run FFT / PETH | Select mode from dropdown, double-click the plot |
+| Set analysis window | **Analysis** button → Window row → symmetric size or independent before/after |
+| Fit curve | **Analysis** button → **Curve Fit**, then click two points |
+| Run FFT / Z-Score / AUC | **Analysis** button → pick one, then double-click the plot (one run per pick — tick **Persist through trials** to stay armed across trials). Going back to the **Analysis** menu cancels the current tool, so closing it with the X returns you to the plain plot. With **Persist through trials** ticked a **Done** panel appears bottom-left — press it (or **Done** on a graph window) to stop) |
 | Text field study (open/view/validate) | **Text Field Study ▾** menu |
 
 ---
@@ -112,6 +112,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 3.0.0 | App renamed **PyAT (Python Analysis Tool)** (major version for the rename) with a new loading-screen logo; the Analysis dropdown is now an **Analysis** button/menu (one run per pick, "Persist through trials" + a Done panel/buttons, analysis window moved inside it); per-trace line colors in Edit Attributes via a new hue/saturation + darkness color picker; "Tools" title on the left sidebar with a sideways collapsed tab; Options and the other resizable windows now fit small screens; one notification toast at a time; fixed PyQtGraph lines/legend piling up after Overlay All and VisPy's legend collapsing / invisible in dark mode |
 | 2.13.0 | Splice's Cut Out now recomputes dF/F (motion + bleaching correction) on the stitched TDT signal instead of just cutting the old trace; Open Data Folder detects multiple TDT recordings in one directory (Single Experiment Analysis vs Hypothesis Testing placeholder); fixed saved markers/splices being silently lost or corrupted on reload (TDT/Oxysoft/Generic) and Splice failing at recording borders; default motion-correction regression changed from RANSAC to OLS; Splice's mode picker now defaults to Cut Out |
 | 2.12.1 | Loading screen redesign (just the logo, no card), update-available prompt now lives on the splash itself instead of a separate popup, fixed a real bug where that popup could open behind the always-on-top splash and get stuck |
 | 2.12.0 | AUC analysis, Custom Statistics picker, Event PETH "Trials" overlay view, Splice now works on Oxysoft/Generic, RANSAC/Huber/OLS motion-correction choice, Output Folder option, shared export buttons everywhere, marker hit-testing scales with zoom |

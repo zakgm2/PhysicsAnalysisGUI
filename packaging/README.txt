@@ -1,8 +1,8 @@
-Physics Analysis GUI
-=====================
+PyAT (Python Analysis Tool)
+===========================
 
-A desktop app for loading, visualizing, and analyzing physics/neuroscience
-lab data.
+A general-purpose desktop app for loading, plotting, and analyzing
+physics/neuroscience lab data - with a current focus on fiber photometry.
 
 WHAT IT OPENS
 -------------

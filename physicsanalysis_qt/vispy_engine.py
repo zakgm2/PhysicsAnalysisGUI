@@ -55,7 +55,7 @@ from vispy.color import Color
 
 import PhysicsLibrary as pl
 
-from .context import export_file, get_active_signal
+from .context import export_file, get_active_signal, trace_color
 from .fonts import main_plot_scale, scaled_plot_font_sizes
 from .marker_labels import marker_display_label
 from .plotting import _min_max_decimate
@@ -80,6 +80,7 @@ class _LegendRepositioner(QObject):
 
 
 def _position_legend(legend, canvas_native):
+    legend.layout().activate()
     legend.adjustSize()
     margin = 12
     legend.move(canvas_native.width() - legend.width() - margin, margin)
@@ -135,8 +136,14 @@ def build_vispy_widget(ctx):
     yaxis.link_view(view)
 
     legend = QWidget(canvas.native)
+    legend.setObjectName("vispyLegend")
+    # Scoped to the legend itself (a bare declaration cascades to every
+    # child, boxing each row and label separately), and with the text
+    # color fixed: the canvas is always white regardless of the app's
+    # light/dark theme, so palette-derived text would vanish on it in dark.
     legend.setStyleSheet(
-        "background-color: rgba(255, 255, 255, 210); border: 1px solid #999;")
+        "#vispyLegend { background-color: rgba(255, 255, 255, 210); border: 1px solid #999; }"
+        "#vispyLegend QLabel { color: black; }")
     legend_layout = QVBoxLayout(legend)
     legend_layout.setContentsMargins(6, 4, 6, 4)
     legend_layout.setSpacing(2)
@@ -195,11 +202,19 @@ def vispy_simple_plot(ctx):
     legend_info = []  # (color, raw_name) for whichever lines are legend-eligible
     max_points = ctx.settings.get("decimate_max_points", 2000)
 
-    def _add_line(x, y, color, width, raw_name, alpha=1.0):
+    def _add_line(x, y, color, width, raw_name, alpha=1.0, color_key=None):
         # alpha values mirror plotting.py's matplotlib engine line-for-line
         # (0.8 for TDT/overlay traces, 0.5 for Oxysoft per-channel traces,
         # opaque for Oxysoft means and Generic) so a trace looks the same
         # regardless of which engine is currently selected.
+        #
+        # color_key: which Edit Attributes color pick this line follows —
+        # its own legend name, unless it's one of a group's unnamed
+        # lines (Oxysoft channels), which follow the group's entry.
+        # Resolved before the legend_info append below so the legend's
+        # swatch matches the line.
+        if color_key or raw_name:
+            color = trace_color(ctx, color_key or raw_name, color)
         dx, dy = _min_max_decimate(x, y, decimate_xlim, max_points=max_points)
         line_color = Color(color, alpha=alpha) if alpha < 1.0 else color
         line = scene.Line(pos=_xy(dx, dy), color=line_color, width=width, parent=view.scene)
@@ -213,8 +228,10 @@ def vispy_simple_plot(ctx):
         o2hb = cache['o2hb']
         hhb = cache['hhb']
         for i in range(o2hb.shape[0]):
-            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5)
-            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
+            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5,
+                      color_key='O2Hb channels')
+            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5,
+                      color_key='HHb channels')
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
         _add_line(x, pl.mean_channels(o2hb), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
@@ -271,8 +288,17 @@ def _rebuild_legend(ctx, legend_info):
     layout = legend.layout()
     while layout.count():
         item = layout.takeAt(0)
-        if item.widget():
-            item.widget().deleteLater()
+        row = item.widget()
+        if row is not None:
+            # takeAt() only removes the row from the layout — it's still a
+            # visible child of the legend, and deleteLater() alone is
+            # deferred, so until the event loop gets to it the old row
+            # stays painted right on top of the freshly-added ones. That
+            # showed up as stacked/duplicated legend entries after every
+            # Plot: dropdown switch. Detach it immediately instead.
+            row.hide()
+            row.setParent(None)
+            row.deleteLater()
 
     plot_attrs = ctx.plot_attrs
     label_map = {}
@@ -295,6 +321,11 @@ def _rebuild_legend(ctx, legend_info):
         row_layout.addWidget(swatch)
         row_layout.addWidget(QLabel(display_name))
         layout.addWidget(row)
+        # Rows added to an already-visible legend are only shown on a later
+        # event-loop pass, and until then the layout counts them as empty —
+        # so the adjustSize() below shrank the legend to a blank sliver on
+        # every redraw after the first. Show them now so it sizes correctly.
+        row.show()
 
     legend.setVisible(shown_any)
     if shown_any:

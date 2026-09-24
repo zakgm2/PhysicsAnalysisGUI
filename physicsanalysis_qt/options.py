@@ -9,12 +9,13 @@ Options dialog: default folder for Open dialogs, performance settings
 import os
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
+    QDialog, QHBoxLayout, QGridLayout, QLabel, QLineEdit,
     QPushButton, QCheckBox, QSpinBox, QComboBox, QFileDialog, QGroupBox,
     QMessageBox,
 )
 
 from . import plotting
+from .window_fit import scroll_body, fit_dialog_to_content
 
 
 _ENGINE_LABELS = {
@@ -37,8 +38,7 @@ class OptionsDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Options")
-        self.resize(500, 480)
-        layout = QVBoxLayout(self)
+        outer, layout, body = scroll_body(self)  # see window_fit.py
 
         gb_theme = QGroupBox("Appearance")
         gt = QGridLayout(gb_theme)
@@ -149,8 +149,6 @@ class OptionsDialog(QDialog):
 
         layout.addWidget(gb_perf)
 
-        layout.addStretch(1)
-
         btn_row = QHBoxLayout()
         btn_ok = QPushButton("OK")
         btn_ok.setDefault(True)
@@ -159,7 +157,9 @@ class OptionsDialog(QDialog):
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_ok)
         btn_row.addWidget(btn_cancel)
-        layout.addLayout(btn_row)
+        outer.addLayout(btn_row)
+
+        fit_dialog_to_content(self, body, min_width=500)
 
     def _browse(self):
         path = QFileDialog.getExistingDirectory(self, "Default Folder", self.e_folder.text())

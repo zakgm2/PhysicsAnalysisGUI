@@ -28,7 +28,7 @@ from PyQt6.QtCore import Qt
 
 import PhysicsLibrary as pl
 
-from .context import export_file, get_active_signal
+from .context import export_file, get_active_signal, trace_color
 from .fonts import scaled_plot_font_sizes
 from .pg_interaction import on_pg_mouse_moved, on_pg_mouse_clicked
 from .toasts import show_error
@@ -216,11 +216,17 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
         label_map = {orig: (new, vis) for orig, new, vis in plot_attrs["leg_entries"]}
     raw_names = []
 
-    def _add_line(x, y, color, width, raw_name, alpha=1.0):
+    def _add_line(x, y, color, width, raw_name, alpha=1.0, color_key=None):
         # alpha values mirror plotting.py's matplotlib engine line-for-line
         # (0.8 for TDT/overlay traces, 0.5 for Oxysoft per-channel traces,
         # opaque for Oxysoft means and Generic) so a trace looks the same
         # regardless of which engine is currently selected.
+        #
+        # color_key: which Edit Attributes color pick this line follows —
+        # its own legend name, unless it's one of a group's unnamed
+        # lines (Oxysoft channels), which follow the group's entry.
+        if color_key or raw_name:
+            color = trace_color(ctx, color_key or raw_name, color)
         pen_color = pg.mkColor(color)
         if alpha < 1.0:
             pen_color.setAlphaF(alpha)
@@ -254,8 +260,10 @@ def _pg_simple_plot_impl(ctx, cache, plot_item, zoom_key, is_new_dataset, prev_r
         o2hb = cache['o2hb']
         hhb = cache['hhb']
         for i in range(o2hb.shape[0]):
-            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5)
-            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5)
+            _add_line(x, o2hb[i], '#FF9999', 1, 'O2Hb channels' if i == 0 else None, alpha=0.5,
+                      color_key='O2Hb channels')
+            _add_line(x, hhb[i], '#99BBFF', 1, 'HHb channels' if i == 0 else None, alpha=0.5,
+                      color_key='HHb channels')
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
         _add_line(x, pl.mean_channels(o2hb), '#CC0000', 2, f'Mean O2Hb{ff_tag}')
@@ -386,18 +394,21 @@ def pg_update_active_signal(ctx):
     just how long it's visible for.
 
     Only valid for TDT's single-line case (Oxysoft/Generic never reach
-    get_active_signal — they don't have a Plot dropdown at all); callers
-    must already know that's what this redraw is. Returns False if
-    there's no existing line yet (nothing rendered so far this session),
-    so the caller can fall back to a full pg_simple_plot().
+    get_active_signal — they don't have a Plot dropdown at all). Returns
+    False — so the caller falls back to a full pg_simple_plot() — unless
+    exactly one trace is currently drawn: nothing rendered yet this
+    session, or the plot is showing Overlay All (several lines), where
+    retargeting the first line would leave the others (and their legend
+    rows) behind on top of the newly selected signal.
     """
     cache = ctx.cache
     plot_item = ctx.pg_plot_item
-    if cache is None or plot_item is None or not ctx.pg_lines:
+    if cache is None or plot_item is None or len(ctx.pg_lines) != 1:
         return False
 
     item, _, _ = ctx.pg_lines[0]
     _, label, y, color = get_active_signal(ctx)
+    color = trace_color(ctx, label, color)
 
     item.setData(cache['x'], y)
     item.setPen(pg.mkPen(color=color, width=1))
@@ -410,10 +421,12 @@ def pg_update_active_signal(ctx):
     display_name, visible = label_map.get(label, (label, True))
 
     legend = plot_item.legend
-    old_label = ctx._legend_entries[0] if ctx._legend_entries else None
     if legend is not None:
-        if old_label is not None:
-            legend.removeItem(old_label)
+        # Removed by the line item itself, not by name via
+        # ctx._legend_entries — that list is shared bookkeeping other code
+        # can reset, whereas the legend's own record of this item can't go
+        # stale. (No-op if the entry was hidden via Edit Attributes.)
+        legend.removeItem(item)
         if visible:
             legend.addItem(item, display_name)
     ctx._legend_entries = [label]

@@ -22,8 +22,10 @@ import PhysicsLibrary as pl
 
 from ..context import get_active_signal
 from ..fonts import fig_font_sizes
+from .analysis_picker import add_done_button, disarm_analysis
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
 from .models_registry import CURVE_FIT_MODELS
+from ..window_fit import fit_to_screen
 
 
 class CurveFitDialog(QDialog):
@@ -31,7 +33,7 @@ class CurveFitDialog(QDialog):
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Curve Fit")
-        self.resize(720, 680)
+        fit_to_screen(self, 720, 680)
         self.last_fit_results = []
 
         p1_idx = p1_tuple[0]
@@ -126,6 +128,7 @@ class CurveFitDialog(QDialog):
         btn_close = QPushButton("Close")
         btn_close.clicked.connect(self.reject)
         btn_row.addWidget(btn_close)
+        add_done_button(ctx, self, btn_row)
         layout.addLayout(btn_row)
 
         self._run_fit()
@@ -231,5 +234,6 @@ class CurveFitDialog(QDialog):
 
 
 def launch_curve_fit(ctx, source_line, p1_tuple, p2_tuple):
+    disarm_analysis(ctx)  # an armed Analysis tool is good for one run (unless it's set to persist)
     dlg = CurveFitDialog(ctx.win, ctx, source_line, p1_tuple, p2_tuple)
     dlg.exec()

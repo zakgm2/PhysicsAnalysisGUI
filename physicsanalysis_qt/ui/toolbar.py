@@ -1,7 +1,7 @@
 """
 ui/toolbar.py
 ---------------
-Builds the top toolbar: Open menu, analysis mode dropdown, view
+Builds the top toolbar: Open menu, the Analysis button, view
 controls, and (pushed to the far right via a stretch, so it sits in the
 window's top-right corner) the Options gear icon. Grid visibility lives
 in the Edit Attributes dialog (attributes.py); Add Marker, Splice, Save
@@ -12,8 +12,7 @@ Markers, and Measure Intervals live in the left icon sidebar
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QWidget, QHBoxLayout, QPushButton, QMenu, QLabel,
-    QComboBox, QToolButton,
+    QWidget, QHBoxLayout, QPushButton, QMenu, QLabel, QToolButton,
 )
 
 from ..loaders.tdt import open_folder, reload_folder
@@ -26,7 +25,8 @@ from ..plot_signal import build_plot_signal_control
 from ..attributes import open_attributes_window
 from ..options import open_options_dialog
 from ..toasts import show_error
-from ..analysis.window_settings import init_window_settings, open_window_dialog, _window_button_text
+from ..analysis.window_settings import init_window_settings
+from ..analysis.analysis_picker import open_analysis_menu
 from ..analysis.text_field_study import launch_field_study_results
 from ..analysis.field_study_validation import launch_field_study_validation
 from ..analysis.custom_statistics import launch_custom_statistics
@@ -98,16 +98,18 @@ def build_toolbar(ctx):
     btn_custom_stats.clicked.connect(lambda: launch_custom_statistics(ctx))
     layout.addWidget(btn_custom_stats)
 
-    ctx.plot_type_combo = QComboBox()
-    ctx.plot_type_combo.addItems(["Analysis", "Z-Score", "FFT", "AUC", "Curve Fit"])
-    layout.addWidget(ctx.plot_type_combo)
+    # Analysis: a button like Custom Statistics — opens a picker (FFT,
+    # Z-Score, AUC, Curve Fit, plus the analysis window setting), then
+    # asks you to double-click the graph. See analysis/analysis_picker.py.
+    init_window_settings(ctx)
+    ctx.btn_analysis = QPushButton("Analysis")
+    ctx.btn_analysis.setToolTip(
+        "Analysis — pick FFT, Z-Score, AUC or Curve Fit, then click on the graph. "
+        "The analysis window (seconds around the click) is set here too.")
+    ctx.btn_analysis.clicked.connect(lambda: open_analysis_menu(ctx))
+    layout.addWidget(ctx.btn_analysis)
 
     layout.addWidget(build_plot_signal_control(ctx))
-
-    init_window_settings(ctx)
-    ctx.btn_window = QPushButton(_window_button_text(ctx))
-    ctx.btn_window.clicked.connect(lambda: open_window_dialog(ctx))
-    layout.addWidget(ctx.btn_window)
 
     layout.addWidget(QLabel("|"))
 

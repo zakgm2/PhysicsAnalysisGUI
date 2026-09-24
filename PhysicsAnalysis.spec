@@ -1,5 +1,8 @@
 # PhysicsAnalysis.spec
 # ---------------------
+# (This file keeps its old name — what actually ships is named by the
+# name= arguments below: PyAT.exe / PyAT.app.)
+#
 # PyInstaller build spec for the PyQt6 desktop app, onefile mode — a
 # single executable instead of a folder of DLLs/data files, so CI can
 # upload/attach it directly with no zip step. Trade-off: onefile
@@ -83,7 +86,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='PhysicsAnalysis',
+    name='PyAT',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -95,7 +98,7 @@ exe = EXE(
 if sys.platform == 'darwin':
     app = BUNDLE(
         exe,
-        name='PhysicsAnalysis.app',
+        name='PyAT.app',
         icon=_icon,
         bundle_identifier='com.zakgm2.physicsanalysis',
     )

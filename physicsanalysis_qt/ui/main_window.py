@@ -24,6 +24,7 @@ from ..pg_engine import build_pg_widget, sync_pg_margins
 from ..toasts import show_window_toast
 from ..update_check import local_version
 from ..vispy_engine import build_vispy_widget, sync_vispy_margins
+from ..window_fit import fit_to_screen
 from .toolbar import build_toolbar
 from .edit_toolbar import build_edit_toolbar
 
@@ -109,9 +110,11 @@ def build_main_window(ctx):
         version = local_version("physicsanalysis_qt")
     except Exception:
         version = None  # missing/unreadable pyproject.toml (e.g. a packaged build) — title still works without it
-    title = "Physics Analysis GUI (PyQt6)" + (f" — v{version}" if version else "")
+    title = "PyAT (Python Analysis Tool)" + (f" — v{version}" if version else "")
     ctx.win.setWindowTitle(title)
-    ctx.win.resize(1250, 850)
+    # The main window may take most of the screen (95%, vs. a dialog's
+    # 85%) — it's the app itself, not a pop-up over it.
+    fit_to_screen(ctx.win, 1250, 850, max_width_frac=0.95, max_height_frac=0.95)
 
     central = QWidget()
     ctx.win.setCentralWidget(central)
@@ -191,7 +194,7 @@ def apa_citation():
     except Exception:
         version = None
     version_part = f" (Version {version})" if version else ""
-    return f"Grand Maison, Z. ({date.today().year}). Physics Analysis GUI{version_part} [Computer software]. {REPO_URL}"
+    return f"Grand Maison, Z. ({date.today().year}). PyAT: Python Analysis Tool{version_part} [Computer software]. {REPO_URL}"
 
 
 def _build_citation_button(ctx):

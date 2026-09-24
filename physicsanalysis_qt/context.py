@@ -49,6 +49,7 @@ def default_plot_attrs():
         "leg_loc":     "upper left",
         "leg_entries": None,
         "bold":        True,
+        "line_colors": {},  # {legend entry name: "#rrggbb"} — user overrides, see trace_color()
     }
 
 
@@ -103,12 +104,19 @@ class AppState:
         self._vispy_press_button = None
 
         # Toolbar widgets (assigned in ui/toolbar.py)
-        self.plot_type_combo = None
-        self.btn_window = None
+        self.btn_analysis = None
         self.btn_add_marker = None
 
+        # Which Analysis tool is armed for the next click on the graph: None,
+        # or "Z-Score" / "FFT" / "AUC" / "Curve Fit" — see
+        # analysis/analysis_picker.py, which sets it, and analysis/dispatch.py
+        self.analysis_mode = None
+        # The picker's "Persist through trials" checkbox: when True an armed
+        # tool stays armed after each run instead of disarming after one.
+        self.analysis_persist = False
+
         # Analysis window (pre/post seconds around a clicked event) — see
-        # analysis/window_settings.py for the toolbar button + dialog
+        # analysis/window_settings.py for the dialog (opened from the picker)
         self.window_pre = None
         self.window_post = None
         self.window_symmetric = True
@@ -137,12 +145,8 @@ class AppState:
         # True from a successful start_splice_flow() until the two clicks
         # it's waiting for are both in (apply_splice_at_points) — the
         # click handlers (interaction.py, pg_interaction.py) check this
-        # directly rather than plot_type_combo.currentText() == "Splice",
-        # since "Splice" isn't a combo entry (only the sidebar's scissors
-        # icon starts a splice) and, previously, re-setting the combo to
-        # a value it was already showing didn't fire currentTextChanged —
-        # which meant clicking the scissors a second time in a row did
-        # nothing.
+        # directly — it's separate from analysis_mode above, since only the
+        # sidebar's scissors icon starts a splice, not the Analysis button.
         self.splice_click_mode = False
         self.selected_path = None
         self.last_dir = None  # last folder browsed in any Open dialog
@@ -239,10 +243,32 @@ class AppState:
         self._last_xlabel = ""
         self._last_ylabel = ""
         self._legend_entries = []  # list of label strings, in plotted order
+        self._trace_default_colors = {}  # legend entry name -> color the engines drew it in by default
+
+        # The one toast on screen (toasts.py keeps it to one at a time) and
+        # the timer that will dismiss it, plus the separate pinned panel
+        # (message + button, bottom-left) that toasts never touch.
+        self._toast = None
+        self._toast_timer = None
+        self._pinned_panel = None
+        self._toast_repositioner = None
 
         # Background loading (Options: "Load data files on a background thread")
         self._bg_thread = None
         self._bg_worker = None
+
+
+def trace_color(ctx, key, default):
+    """The color to draw a main-plot trace in: the user's pick from Edit
+    Attributes if there is one for this legend entry (`key` is its raw,
+    un-renamed name), otherwise the engine's own `default`.
+
+    Every engine draws its traces through this, so a pick applies the same
+    way whichever engine is active. It also records `default` so the Edit
+    Attributes dialog can show — and reset to — what a trace would be
+    drawn in without an override."""
+    ctx._trace_default_colors[key] = default
+    return ctx.plot_attrs["line_colors"].get(key) or default
 
 
 def get_active_signal(ctx):

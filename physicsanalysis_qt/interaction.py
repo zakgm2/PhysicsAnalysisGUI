@@ -196,7 +196,7 @@ def on_press(ctx, event):
         return
 
     # Curve Fit mode: record mouse-down pixel position for drag detection
-    if ctx.plot_type_combo.currentText() == "Curve Fit":
+    if ctx.analysis_mode == "Curve Fit":
         if event.button == 1 and not event.dblclick:
             ctx.press_x, ctx.press_y = event.x, event.y
         return
@@ -393,7 +393,7 @@ def on_release(ctx, event):
         ctx._rect_dragging = False
         _refresh_hover_bg(ctx)
 
-    if (ctx.plot_type_combo.currentText() == "Curve Fit"
+    if (ctx.analysis_mode == "Curve Fit"
             and event.button == 1
             and event.inaxes == ctx.ax
             and event.xdata is not None):
@@ -508,6 +508,17 @@ def on_resize(ctx, event):
     # keeps text scaling smoothly with the window instead of only jumping
     # once on the next full simple_plot(). Cheap: no clear/rebuild, just
     # font sizes + a draw_idle.
+    #
+    # The matplotlib canvas still exists (hidden) while PyQtGraph/VisPy is
+    # the active engine and is resized along with the window, so this fires
+    # for them too — and _apply_plot_attrs() overwrites ctx._legend_entries
+    # from matplotlib's own (empty) legend, wiping the entries the active
+    # engine recorded. That left PyQtGraph's Plot: dropdown unable to find
+    # the old legend row to replace, so the legend grew by one every switch.
+    # Nothing here is needed for those engines (they rescale their own
+    # fonts), and switch_plot_engine() does a full re-render on the way back.
+    if ctx.settings.get("plot_engine") in ("pyqtgraph", "vispy"):
+        return
     if ctx.cache is not None and ctx.ax is not None:
         plotting._apply_plot_attrs(ctx)
         ctx.canvas.draw_idle()

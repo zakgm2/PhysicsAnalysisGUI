@@ -2,9 +2,10 @@
 analysis/window_settings.py
 ----------------------------
 The analysis window (pre/post seconds around a clicked event, used by
-FFT/PETH/Curve Fit) as a single toolbar button + popup dialog, instead of
-always-visible entry fields. Symmetric by default (one size applies to
-both sides); untick "Symmetric" to set pre/post independently.
+FFT/PETH/AUC) as a popup dialog, opened from the Analysis picker
+(analysis_picker.py) instead of always-visible entry fields. Symmetric by
+default (one size applies to both sides); untick "Symmetric" to set
+pre/post independently.
 """
 
 from PyQt6.QtWidgets import (
@@ -28,15 +29,11 @@ def get_window(ctx):
     return ctx.window_pre, ctx.window_post
 
 
-def _window_button_text(ctx):
+def window_summary(ctx):
+    """Short description of the current window, for the Analysis picker."""
     if ctx.window_symmetric:
-        return f"Window: {ctx.window_pre + ctx.window_post:.0f}s"
-    return f"Window: {ctx.window_pre:.0f}s / {ctx.window_post:.0f}s"
-
-
-def _refresh_window_button(ctx):
-    if ctx.btn_window is not None:
-        ctx.btn_window.setText(_window_button_text(ctx))
+        return f"{ctx.window_pre + ctx.window_post:.0f}s"
+    return f"{ctx.window_pre:.0f}s before / {ctx.window_post:.0f}s after"
 
 
 class WindowDialog(QDialog):
@@ -120,7 +117,6 @@ class WindowDialog(QDialog):
         else:
             ctx.window_pre = self._parse(self.e_pre, _DEFAULT_PRE)
             ctx.window_post = self._parse(self.e_post, _DEFAULT_POST)
-        _refresh_window_button(ctx)
         self.accept()
 
 

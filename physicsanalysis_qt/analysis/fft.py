@@ -3,8 +3,8 @@ analysis/fft.py
 -------------------
 FFT viewer window — dual/triple-axis for Oxysoft (O2Hb/HHb/optional tHb),
 single-axis for TDT/Generic sources. Same click-triggered dispatch as
-AUC/Z-Score (double-click near a point with "FFT" selected in the
-toolbar's plot-type combo). Mirrors auc.py's/peth.py's per-source
+AUC/Z-Score (double-click near a point after picking "FFT" from the
+toolbar's Analysis button). Mirrors auc.py's/peth.py's per-source
 branching (build a `channels` list, then one shared render loop) rather
 than special-casing Oxysoft's figure layout separately, so a channel
 either tool supports (e.g. tHb) isn't silently unreachable here too.
@@ -26,7 +26,9 @@ import PhysicsLibrary as pl
 from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_window_toast
+from .analysis_picker import add_done_button
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
+from ..window_fit import fit_to_screen
 
 
 def _annotate_fft_peaks(ax_f, freqs, power, color, n_peaks=3):
@@ -80,7 +82,7 @@ def launch_fft(ctx, center_t):
     dlg.setWindowTitle(
         f"FFT — {cache['store']}  |  centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s"
     )
-    dlg.resize(700, 650)
+    fit_to_screen(dlg, 700, 650)
     layout = QVBoxLayout(dlg)
 
     n = len(last_fft_results)
@@ -136,6 +138,7 @@ def launch_fft(ctx, center_t):
     btn_export = QPushButton("Export Plot")
     btn_export.clicked.connect(lambda: export_figure_to_file(ctx, fig_fft, "FFT", f"{int(center_t)}s"))
     btn_row.addWidget(btn_export)
+    add_done_button(ctx, dlg, btn_row)
     layout.addLayout(btn_row)
 
     show_window_toast(ctx, f"FFT at {center_t:.1f}s")

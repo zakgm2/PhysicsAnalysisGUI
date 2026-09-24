@@ -28,6 +28,7 @@ import PhysicsLibrary as pl
 from ..background import run_in_background
 from ..field_study_config import load_config, save_config
 from ..toasts import show_error, show_success, show_window_toast
+from ..window_fit import scroll_body, fit_dialog_to_content
 
 
 class CompareFieldsDialog(QDialog):
@@ -47,8 +48,7 @@ class CompareFieldsDialog(QDialog):
         self.folder_path = folder_path
         self.fields = fields
         self.setWindowTitle("Compare Fields")
-        self.resize(640, 520)
-        layout = QVBoxLayout(self)
+        outer, layout, body = scroll_body(self)  # see window_fit.py
 
         existing = load_config()
 
@@ -136,7 +136,9 @@ class CompareFieldsDialog(QDialog):
         btn_cancel = QPushButton("Cancel")
         btn_cancel.clicked.connect(self.reject)
         btn_row.addWidget(btn_cancel)
-        layout.addLayout(btn_row)
+        outer.addLayout(btn_row)
+
+        fit_dialog_to_content(self, body, min_width=640)
 
     def _add_pair_row(self):
         field_a = self.new_pair_a.currentText()

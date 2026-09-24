@@ -27,9 +27,9 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            asset_name: PhysicsAnalysis-windows.zip
+            asset_name: PyAT-windows.zip
           - os: macos-latest
-            asset_name: PhysicsAnalysis-macos.zip
+            asset_name: PyAT-macos.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -48,9 +48,9 @@ jobs:
       # and falls back to no icon if it's missing (see the spec's own
       # comment) - built here from icon.png since .icns can only be
       # created with macOS's own iconutil, and there's no Mac available
-      # to do this locally. Source is only 192x192, so the largest
-      # (1024x1024) iconset entries are just upscaled and will look soft -
-      # replace icon.png with a higher-res source (512x512+) to fix that.
+      # to do this locally. icon.png is only 500x500, so the largest
+      # (512x512 and 1024x1024) iconset entries are just upscaled and will
+      # look soft - replace icon.png with a 1024x1024 source to fix that.
       - name: Generate macOS .icns from icon.png
         if: runner.os == 'macOS'
         run: |
@@ -93,13 +93,13 @@ jobs:
       - name: Zip the build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist\PhysicsAnalysis.exe, dist\README.txt, dist\THANK_YOU.txt -DestinationPath ${{ matrix.asset_name }}
+        run: Compress-Archive -Path dist\PyAT.exe, dist\README.txt, dist\THANK_YOU.txt -DestinationPath ${{ matrix.asset_name }}
 
       - name: Zip the build (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.asset_name }} PhysicsAnalysis.app README.txt THANK_YOU.txt MACOS_INSTALL.md
+          zip -r ../${{ matrix.asset_name }} PyAT.app README.txt THANK_YOU.txt MACOS_INSTALL.md
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

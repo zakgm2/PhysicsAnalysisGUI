@@ -2,8 +2,8 @@
 analysis/auc.py
 ------------------
 Area-Under-Curve window analysis — same click-triggered dispatch as FFT/
-Z-Score (double-click near an event with "AUC" selected in the
-toolbar's plot-type combo). Mirrors fft.py's per-source branching
+Z-Score (double-click near an event after picking "AUC" from the
+toolbar's Analysis button). Mirrors fft.py's per-source branching
 (Oxysoft dual/triple-channel vs. TDT/Generic single-channel). Generic/
 double-click tools like this one deliberately analyze whichever signal
 the "Plot:" dropdown currently shows (get_active_signal) rather than
@@ -23,7 +23,9 @@ import PhysicsLibrary as pl
 from ..context import get_active_signal
 from ..fonts import fig_font_sizes
 from ..toasts import show_window_toast
+from .analysis_picker import add_done_button
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
+from ..window_fit import fit_to_screen
 
 
 def launch_auc(ctx, center_t):
@@ -62,7 +64,7 @@ def launch_auc(ctx, center_t):
     dlg.setWindowTitle(
         f"AUC — {cache['store']}  |  centre {center_t:.1f}s  |  -{pre:.0f}s/+{post:.0f}s"
     )
-    dlg.resize(700, 650)
+    fit_to_screen(dlg, 700, 650)
     layout = QVBoxLayout(dlg)
 
     result_lbl = QLabel()
@@ -116,6 +118,7 @@ def launch_auc(ctx, center_t):
     btn_plot = QPushButton("Export Plot")
     btn_plot.clicked.connect(lambda: export_figure_to_file(ctx, fig, "AUC", f"{int(center_t)}s"))
     btn_row.addWidget(btn_plot)
+    add_done_button(ctx, dlg, btn_row)
     layout.addLayout(btn_row)
 
     show_window_toast(ctx, f"AUC computed at {center_t:.1f}s")

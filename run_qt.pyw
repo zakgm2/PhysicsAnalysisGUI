@@ -1,7 +1,7 @@
 """
-PhysicsAnalysisGUI_qt.py
-------------------------
-Entry point for the PyQt6 version of the Physics Analysis GUI.
+PyAT (Python Analysis Tool) — entry point
+-----------------------------------------
+Entry point for the PyQt6 desktop app.
 
 All the actual implementation lives in the physicsanalysis_qt/ package,
 split by concern (loaders, plotting, interaction, analysis dialogs, UI
@@ -51,7 +51,7 @@ def main():
     update_worker.start()
     wait_loop.exec()
 
-    # An available PhysicsAnalysis update swaps the splash itself into
+    # An available PyAT update swaps the splash itself into
     # the message + Download Update / Continue Anyway prompt (see
     # splash.py's prompt_update) rather than opening a second dialog —
     # this window is WindowStaysOnTopHint, so a separate QMessageBox

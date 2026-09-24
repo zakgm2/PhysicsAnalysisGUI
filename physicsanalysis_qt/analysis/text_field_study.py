@@ -18,6 +18,7 @@ from PyQt6.QtWidgets import (
 
 from ..context import export_file
 from ..toasts import show_error
+from ..window_fit import fit_to_screen
 
 
 class FieldStudyResultsDialog(QDialog):
@@ -29,7 +30,7 @@ class FieldStudyResultsDialog(QDialog):
         self.ctx = ctx
         self.df = df
         self.setWindowTitle("Text Field Study Results")
-        self.resize(900, 500)
+        fit_to_screen(self, 900, 500)
         layout = QVBoxLayout(self)
 
         intro = QLabel(

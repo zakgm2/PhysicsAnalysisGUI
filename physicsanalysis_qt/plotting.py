@@ -11,7 +11,7 @@ import matplotlib.transforms as transforms
 
 import PhysicsLibrary as pl
 
-from .context import export_file, get_active_signal
+from .context import export_file, get_active_signal, trace_color
 from .fonts import main_plot_scale
 from .theme import mpl_colors
 from .toasts import show_error
@@ -224,25 +224,32 @@ def simple_plot(ctx, draw_now=True):
         x = cache['x']
         o2hb = cache['o2hb']
         hhb = cache['hhb']
+        # Only the first line of each channel group carries a legend name;
+        # the rest ('_nolegend_') follow that entry's color.
+        o2hb_color = trace_color(ctx, 'O2Hb channels', '#FF9999')
+        hhb_color = trace_color(ctx, 'HHb channels', '#99BBFF')
         for i in range(o2hb.shape[0]):
-            ln, = ax.plot(x, o2hb[i], color='#FF9999', lw=0.8, alpha=0.5,
+            ln, = ax.plot(x, o2hb[i], color=o2hb_color, lw=0.8, alpha=0.5,
                            label='O2Hb channels' if i == 0 else '_nolegend_')
             decim_lines.append((ln, x, o2hb[i]))
-            ln, = ax.plot(x, hhb[i], color='#99BBFF', lw=0.8, alpha=0.5,
+            ln, = ax.plot(x, hhb[i], color=hhb_color, lw=0.8, alpha=0.5,
                            label='HHb channels' if i == 0 else '_nolegend_')
             decim_lines.append((ln, x, hhb[i]))
         ff = cache.get('fit_factor_mean')
         ff_tag = f"  [FF: {ff:.1f}%]" if ff is not None else ""
         mean_o2hb = pl.mean_channels(o2hb)
-        ln, = ax.plot(x, mean_o2hb, color='#CC0000', lw=2.0, label=f'Mean O2Hb{ff_tag}')
+        name = f'Mean O2Hb{ff_tag}'
+        ln, = ax.plot(x, mean_o2hb, color=trace_color(ctx, name, '#CC0000'), lw=2.0, label=name)
         decim_lines.append((ln, x, mean_o2hb))
         mean_hhb = pl.mean_channels(hhb)
-        ln, = ax.plot(x, mean_hhb, color='#0033CC', lw=2.0, label=f'Mean HHb{ff_tag}')
+        name = f'Mean HHb{ff_tag}'
+        ln, = ax.plot(x, mean_hhb, color=trace_color(ctx, name, '#0033CC'), lw=2.0, label=name)
         decim_lines.append((ln, x, mean_hhb))
         if 'thb' in cache:
             thb = cache['thb']
             mean_thb = pl.mean_channels(thb)
-            ln, = ax.plot(x, mean_thb, color='#228B22', lw=2.0, label=f'Mean tHb{ff_tag}')
+            name = f'Mean tHb{ff_tag}'
+            ln, = ax.plot(x, mean_thb, color=trace_color(ctx, name, '#228B22'), lw=2.0, label=name)
             decim_lines.append((ln, x, mean_thb))
         y_label = "Delta Concentration (uM)"
         title = f"NIRS — {cache['store']}"
@@ -256,7 +263,8 @@ def simple_plot(ctx, draw_now=True):
             mask = ~np.isnan(y)
             xv, yv = x[mask], y[mask]
             ln, = ax.plot(xv, yv, 'o-', lw=1.8, markersize=4,
-                           color=_GEN_COLORS[i % len(_GEN_COLORS)], label=col_name)
+                           color=trace_color(ctx, col_name, _GEN_COLORS[i % len(_GEN_COLORS)]),
+                           label=col_name)
             decim_lines.append((ln, xv, yv))
         y_label = "Value"
         title = cache['store']
@@ -268,7 +276,7 @@ def simple_plot(ctx, draw_now=True):
             # lw=1.5, not Oxysoft's 0.8 — the hover tracker below filters
             # visible lines to linewidth >= 1.5 (see interaction.py), so a
             # thinner line here would be silently un-hoverable.
-            ln, = ax.plot(cache['x'], sig['y'], color=sig['color'],
+            ln, = ax.plot(cache['x'], sig['y'], color=trace_color(ctx, sig['label'], sig['color']),
                            lw=1.5, alpha=0.8, label=sig['label'])
             decim_lines.append((ln, cache['x'], sig['y']))
         y_label = "Amplitude"
@@ -278,7 +286,7 @@ def simple_plot(ctx, draw_now=True):
     else:
         _, label_text, data_to_plot, color_choice = get_active_signal(ctx)
         ax.axvline(0, color='black', linewidth=1.0, alpha=0.4, zorder=1)
-        ln, = ax.plot(cache['x'], data_to_plot, color=color_choice,
+        ln, = ax.plot(cache['x'], data_to_plot, color=trace_color(ctx, label_text, color_choice),
                        lw=1.5, alpha=0.8, label=label_text)
         decim_lines.append((ln, cache['x'], data_to_plot))
         y_label = "Amplitude"

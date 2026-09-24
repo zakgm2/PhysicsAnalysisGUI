@@ -16,6 +16,7 @@ import PhysicsLibrary as pl
 from ..context import export_file
 from ..fonts import fig_font_sizes
 from ..toasts import show_error
+from ..window_fit import fit_to_screen
 
 
 class PT2ViewerDialog(QDialog):
@@ -25,7 +26,7 @@ class PT2ViewerDialog(QDialog):
         self.path = path
         self.img = img
         self.setWindowTitle(f"EFNMR Image — {os.path.basename(path)}")
-        self.resize(600, 660)
+        fit_to_screen(self, 600, 660)
         layout = QVBoxLayout(self)
 
         toolbar = QHBoxLayout()

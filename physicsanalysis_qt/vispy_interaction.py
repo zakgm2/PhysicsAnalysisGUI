@@ -207,7 +207,7 @@ def _handle_click(ctx, x, y, button, is_double, screen_pos):
             _right_click_marker_menu(ctx, x, screen_pos, tol_s)
         return
 
-    if ctx.plot_type_combo.currentText() == "Curve Fit" and button == 1:
+    if ctx.analysis_mode == "Curve Fit" and button == 1:
         if not ctx.vispy_line_visuals:
             return
         best_line, best_dist = None, float('inf')

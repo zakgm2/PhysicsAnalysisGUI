@@ -2,8 +2,8 @@
 analysis/custom_statistics.py
 --------------------------------
 "Custom Statistics" picker — the home for dataset-specific analysis
-tools that don't belong in the double-click Analysis dropdown (which is
-reserved for things that work on any loaded source, analyzing whichever
+tools that don't belong under the Analysis button (which is reserved
+for things that work on any loaded source, analyzing whichever
 signal the "Plot:" dropdown currently shows: FFT, AUC, Curve Fit,
 Z-Score — see analysis/dispatch.py. Custom tools here instead always
 analyze the corrected/normalized signal regardless of what's displayed.
@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
 
 from .event_peth import launch_event_peth
 from .peak_finder import launch_peak_finder
+from ..window_fit import fit_to_screen
 
 _CUSTOM_TOOLS = [
     {
@@ -55,7 +56,7 @@ def launch_custom_statistics(ctx):
 
     dlg = QDialog(ctx.win)
     dlg.setWindowTitle("Custom Statistics")
-    dlg.resize(420, 240 if tools else 160)
+    fit_to_screen(dlg, 420, 240 if tools else 160)
     layout = QVBoxLayout(dlg)
 
     if not tools:

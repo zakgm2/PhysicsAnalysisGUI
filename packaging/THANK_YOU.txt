@@ -1,4 +1,4 @@
-Thank you for trying Physics Analysis GUI!
+Thank you for trying PyAT!
 
 This app is actively being developed, and every bit of feedback helps -
 if something breaks, looks wrong, or you find yourself wishing it did

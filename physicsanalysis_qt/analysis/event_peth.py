@@ -32,6 +32,7 @@ from ..fonts import fig_font_sizes
 from ..marker_labels import marker_display_label
 from ..toasts import show_error, show_window_toast
 from .dispatch import add_stats_export_buttons, export_figure_to_file, get_window
+from ..window_fit import fit_to_screen
 
 # Cycled (modulo) across trials in the "Trials" overlay view — tab10 +
 # tab20's paler companions, same categorical-palette idea as plotting.py's
@@ -92,7 +93,7 @@ class _EventPethResultsDialog(QDialog):
         self._colorbar = None
 
         self.setWindowTitle("Event PETH")
-        self.resize(940, 720)
+        fit_to_screen(self, 940, 720)
         outer = QHBoxLayout(self)
 
         left = QVBoxLayout()

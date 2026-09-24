@@ -161,7 +161,7 @@ class UpdateCheckWorker(QThread):
         if analysis and analysis["outdated"]:
             self.checked.emit({
                 "outdated": True,
-                "message": (f"A newer version of Physics Analysis GUI is available "
+                "message": (f"A newer version of PyAT is available "
                             f"(v{analysis['remote']} — you have v{analysis['local']})."),
             })
         else:

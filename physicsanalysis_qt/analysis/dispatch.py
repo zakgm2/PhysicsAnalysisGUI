@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import QApplication, QPushButton
 
 from ..context import export_file
 from ..toasts import show_error, show_window_toast
+from .analysis_picker import disarm_analysis
 from .window_settings import get_window  # noqa: F401 — re-exported: existing callers import get_window from here
 
 
@@ -105,7 +106,7 @@ def analysis_type(ctx, clicked_x):
         show_error(ctx, "Invalid coordinate format captured.")
         return
 
-    current_mode = ctx.plot_type_combo.currentText()
+    current_mode = ctx.analysis_mode
     if current_mode == "Curve Fit":
         show_window_toast(ctx, "In Curve Fit Mode: use single-clicks to anchor two points.")
         return
@@ -123,6 +124,11 @@ def analysis_type(ctx, clicked_x):
     # event loop). Defer reactivation to the next Qt tick instead.
     ctx.rect_selector.set_active(False)
     try:
+        if current_mode is not None:
+            # An armed tool is good for one run — disarm before its
+            # (blocking) window opens, so the Analysis button is already
+            # back to idle by the time it closes.
+            disarm_analysis(ctx)
         if current_mode == "FFT":
             launch_fft(ctx, center_timestamp)
         elif current_mode == "Z-Score":

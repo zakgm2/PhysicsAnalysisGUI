@@ -25,6 +25,7 @@ import PhysicsLibrary as pl
 from ..background import run_in_background
 from ..context import export_file
 from ..toasts import show_error, show_window_toast
+from ..window_fit import fit_to_screen
 
 
 def _verdict(p_fdr, ci_lower):
@@ -51,7 +52,7 @@ class ValidationSummaryDialog(QDialog):
         self.ctx = ctx
         self.df = summary_df
         self.setWindowTitle("Statistical Validation")
-        self.resize(1050, 400)
+        fit_to_screen(self, 1050, 400)
         layout = QVBoxLayout(self)
 
         layout.addWidget(QLabel(

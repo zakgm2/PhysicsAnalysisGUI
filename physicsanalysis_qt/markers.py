@@ -18,6 +18,7 @@ import PhysicsLibrary as pl
 from .context import _MARKER_COLORS
 from .marker_labels import store_display_name
 from .toasts import show_error, show_success, show_window_toast
+from .window_fit import scroll_body, fit_dialog_to_content
 
 
 class MarkerDialog(QDialog):
@@ -264,7 +265,11 @@ class AddMarkerDialog(QDialog):
         self.start_requested = False
         self.setWindowTitle("Add Marker")
         self.setModal(True)
-        layout = QVBoxLayout(self)
+        # Wide (~900px) and tall enough to overflow a small screen — see
+        # window_fit.py. No separate button row here: "Start Placing" is
+        # the default button inside the form, so Enter still triggers it
+        # even when it's scrolled out of view.
+        _outer, layout, body = scroll_body(self)
 
         # ---- bulk-add auto-detected markers (multi-select stores) --------
         detected = (ctx.cache or {}).get('detected_markers', [])
@@ -408,6 +413,7 @@ class AddMarkerDialog(QDialog):
         l2.addWidget(btn_start, 4, 0, 1, 2)
         layout.addWidget(box2)
 
+        fit_dialog_to_content(self, body)
         self.e_name.setFocus()
 
     def _apply_store_rename(self, item, new_name):
