@@ -48,13 +48,13 @@ The main plot can render with **matplotlib** (CPU), **PyQtGraph** (fast CPU-side
 ## Installation
 
 ```bash
-git clone https://github.com/zakgm2/PhysicsAnalysisGUI.git
-cd PhysicsAnalysisGUI
+git clone https://github.com/zakgm2/PyAT.git
+cd PyAT
 pip install -r requirements.txt
 ```
 
 **Prebuilt executables** (no Python install needed) are attached to each
-[GitHub Release](https://github.com/zakgm2/PhysicsAnalysis/releases) for
+[GitHub Release](https://github.com/zakgm2/PyAT/releases) for
 Windows and macOS. **macOS**: the app isn't signed with a paid Apple
 Developer certificate, so the first launch needs one extra step — see
 [MACOS_INSTALL.md](MACOS_INSTALL.md).
@@ -112,6 +112,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 | Version | Summary |
 |---------|---------|
+| 3.0.1 | Requires PhysicsLibrary 2026.9.24, which fixes the motion-correction fit on long recordings (the default OLS was wrong past ~3 minutes: float32 precision), makes dF/F a real ΔF/F and stops clipping z-scores in raw units — dF/F values and default-OLS PETH z-scores change; Peak Finder's default Z-score threshold is now 5 (was 2.5); AGPL-3.0 stated everywhere (README, package metadata, `CITATION.cff`, `LICENSE.txt` in the release zips); repo-name cleanup to `zakgm2/PyAT` |
 | 3.0.0 | App renamed **PyAT (Python Analysis Tool)** (major version for the rename) with a new loading-screen logo; the Analysis dropdown is now an **Analysis** button/menu (one run per pick, "Persist through trials" + a Done panel/buttons, analysis window moved inside it); per-trace line colors in Edit Attributes via a new hue/saturation + darkness color picker; "Tools" title on the left sidebar with a sideways collapsed tab; Options and the other resizable windows now fit small screens; one notification toast at a time; fixed PyQtGraph lines/legend piling up after Overlay All and VisPy's legend collapsing / invisible in dark mode |
 | 2.13.0 | Splice's Cut Out now recomputes dF/F (motion + bleaching correction) on the stitched TDT signal instead of just cutting the old trace; Open Data Folder detects multiple TDT recordings in one directory (Single Experiment Analysis vs Hypothesis Testing placeholder); fixed saved markers/splices being silently lost or corrupted on reload (TDT/Oxysoft/Generic) and Splice failing at recording borders; default motion-correction regression changed from RANSAC to OLS; Splice's mode picker now defaults to Cut Out |
 | 2.12.1 | Loading screen redesign (just the logo, no card), update-available prompt now lives on the splash itself instead of a separate popup, fixed a real bug where that popup could open behind the always-on-top splash and get stuck |
@@ -139,4 +140,4 @@ See [CHANGELOG.md](CHANGELOG.md) for the full changelog.
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+AGPL-3.0 — see [LICENSE](LICENSE) for details.

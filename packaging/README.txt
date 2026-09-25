@@ -48,4 +48,10 @@ The app checks GitHub on launch for a newer version and will tell you
 if one's available, with a link to download it - it won't install
 anything automatically, just let you know.
 
-Full changelog and source: https://github.com/zakgm2/PhysicsAnalysis
+LICENSE
+-------
+PyAT is free software, released under the GNU Affero General Public
+License v3.0 (AGPL-3.0). The full license text is in LICENSE.txt, next
+to this file; the complete source code is in the repository below.
+
+Full changelog and source: https://github.com/zakgm2/PyAT

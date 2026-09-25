@@ -112,8 +112,10 @@ def _remote_version(repo):
 
 
 # (display name, importable package name, GitHub "owner/repo")
+# The app's repo was renamed to PyAT in v3.0.0. Copies installed before that
+# still ask for the old name, which GitHub redirects to this one.
 _PROJECTS = [
-    ("PhysicsAnalysis", "physicsanalysis_qt", "zakgm2/PhysicsAnalysis"),
+    ("PhysicsAnalysis", "physicsanalysis_qt", "zakgm2/PyAT"),
     ("PhysicsLibrary", "PhysicsLibrary", "zakgm2/PhysicsLibrary"),
 ]
 

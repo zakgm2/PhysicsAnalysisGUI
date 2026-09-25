@@ -6,8 +6,9 @@ name: Build Executables (Windows + macOS)
 # Builds a native PyInstaller executable on each OS separately - it
 # can't cross-compile, has to actually run on the target OS - packages
 # each as a zip alongside the packaging/ collateral (README, thank-you
-# note, and macOS's Gatekeeper first-launch instructions), and attaches
-# both as assets on a GitHub Release for that tag.
+# note, the AGPL license text as LICENSE.txt, and macOS's Gatekeeper
+# first-launch instructions), and attaches both as assets on a GitHub
+# Release for that tag.
 on:
   push:
     tags:
@@ -76,30 +77,36 @@ jobs:
       # root) explains the right-click -> Open workaround (plus an
       # xattr fallback); only relevant there, so only copied into the
       # macOS zip below.
+      #
+      # The AGPL-3.0 requires the license text to travel with the binaries,
+      # so the repo's LICENSE goes into both zips as LICENSE.txt (a .txt
+      # extension so it opens with a double-click on Windows).
       - name: Stage packaging files (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           Copy-Item "packaging\README.txt" "dist\"
           Copy-Item "packaging\THANK_YOU.txt" "dist\"
+          Copy-Item "LICENSE" "dist\LICENSE.txt"
 
       - name: Stage packaging files (macOS)
         if: runner.os == 'macOS'
         run: |
           cp packaging/README.txt dist/
           cp packaging/THANK_YOU.txt dist/
+          cp LICENSE dist/LICENSE.txt
           cp MACOS_INSTALL.md dist/
 
       - name: Zip the build (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist\PyAT.exe, dist\README.txt, dist\THANK_YOU.txt -DestinationPath ${{ matrix.asset_name }}
+        run: Compress-Archive -Path dist\PyAT.exe, dist\README.txt, dist\THANK_YOU.txt, dist\LICENSE.txt -DestinationPath ${{ matrix.asset_name }}
 
       - name: Zip the build (macOS)
         if: runner.os == 'macOS'
         run: |
           cd dist
-          zip -r ../${{ matrix.asset_name }} PyAT.app README.txt THANK_YOU.txt MACOS_INSTALL.md
+          zip -r ../${{ matrix.asset_name }} PyAT.app README.txt THANK_YOU.txt LICENSE.txt MACOS_INSTALL.md
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

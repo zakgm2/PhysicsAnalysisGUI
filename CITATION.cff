@@ -1,0 +1,29 @@
+# Citation metadata: GitHub shows a "Cite this repository" box from this file, and
+# Zenodo reads it when it archives a release. Update `version` and `date-released`
+# at every release (and add the Zenodo `doi:` once the first archive exists).
+cff-version: 1.2.0
+message: "If you use PyAT in your research, please cite it using the metadata below."
+title: "PyAT: Python Analysis Tool"
+type: software
+version: "3.0.1"
+date-released: "2026-09-24"
+repository-code: "https://github.com/zakgm2/PyAT"
+url: "https://github.com/zakgm2/PyAT"
+abstract: >-
+  PyAT (Python Analysis Tool) is a desktop application for loading, visualising and analysing
+  lab recordings: fibre photometry (TDT), NIRS (Oxysoft), generic tabular data and EFNMR. It
+  provides motion and photobleaching correction, dF/F, event-locked z-score PETH, FFT, AUC,
+  peak finding and curve fitting, with splice and marker editing. Its computation lives in the
+  companion package PhysicsLibrary (ZaksPhysicsLibrary on PyPI).
+keywords:
+  - fibre photometry
+  - neuroscience
+  - signal processing
+  - dF/F
+  - PETH
+authors:
+  - family-names: "Grand Maison"
+    given-names: "Z."   # as in the app's APA citation; spell out if you prefer
+    # affiliation: "Your university / lab"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+license: AGPL-3.0-only

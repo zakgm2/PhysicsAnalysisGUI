@@ -28,7 +28,7 @@ from ..window_fit import fit_to_screen
 from .toolbar import build_toolbar
 from .edit_toolbar import build_edit_toolbar
 
-REPO_URL = "https://github.com/zakgm2/PhysicsAnalysis"
+REPO_URL = "https://github.com/zakgm2/PyAT"
 FEEDBACK_URL = f"{REPO_URL}/issues"
 COFFEE_URL = "https://buymeacoffee.com/zakgm2"
 

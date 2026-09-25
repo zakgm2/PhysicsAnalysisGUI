@@ -5,7 +5,7 @@ if something breaks, looks wrong, or you find yourself wishing it did
 something it doesn't, I'd genuinely like to hear about it.
 
 Bug reports / feature requests / general feedback:
-  https://github.com/zakgm2/PhysicsAnalysis/issues
+  https://github.com/zakgm2/PyAT/issues
 
 Thanks again for taking the time to check it out.
 

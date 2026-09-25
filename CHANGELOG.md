@@ -2,6 +2,27 @@
 
 ---
 
+## v3.0.1
+**Fixed: analysis numbers — now requires `ZaksPhysicsLibrary>=2026.9.24`**
+- Motion correction is now fitted in float64. TDT streams are float32, and on a long recording the isosbestic regression silently returned a line at roughly half the true slope (`np.polyfit` in single precision drops the slope term past ~200,000 samples, ~3 minutes at 1 kHz). That hit the **default OLS setting**; RANSAC and Huber barely changed. On a 17-minute test recording the default's peak PETH z-scores were 2-3x too large, and after the fix OLS, RANSAC and Huber agree (mean PETH traces r ≥ 0.995).
+- ΔF/F is now a real ΔF/F. The two-channel path used to divide the motion-corrected residual by the bleaching trend of that same near-zero residual, so the "Normalized (dF/F)" trace had the right shape but a meaningless scale and offset (a simulated 10% transient read as +1,650% with Huber and +399,000% with OLS). It is now divided by the 465 channel's bleaching baseline. Splice's "Cut out this range" goes through the same fix.
+- Z-Score PETH, Event PETH and the Peak Finder no longer clip the signal to ±5 in raw units before z-scoring (which made z-scores depend on the signal's units, gave all-zero z-scores for large-valued signals, truncated large responses and put latencies too early). A brief artifact in the baseline is now handled by winsorising the baseline at 5 robust SDs instead, so the result no longer depends on units.
+- What changes for you: dF/F values, and anything computed in dF/F units (AUC of dF/F, exported dF/F, amplitudes), differ from earlier versions; z-scored PETH shapes change little except with the default OLS on recordings longer than ~3 minutes. Figures made with those should be regenerated.
+
+**Changed: the Peak Finder's default Z-score threshold is 5 (was 2.5)**
+- The response search takes the largest z in each event's window, so 2.5 reported a "response" for about 58% of random pseudo-events on a real recording (10% at 5; the box's tooltip says so). The box still goes from 0.5 to 20 for anyone who wants it lower.
+
+**Changed: the license is stated as AGPL-3.0 everywhere**
+- The README (which said MIT), the package metadata (`license = "AGPL-3.0-only"`, which needs `setuptools>=77` to build), `CITATION.cff` and `packaging/README.txt` all match the `LICENSE` file now. Both release zips (Windows and macOS) include the license text as `LICENSE.txt`.
+
+**New: `CITATION.cff`**
+- GitHub's "Cite this repository" box works, and Zenodo can read it; it matches the app's ❝ APA Citation.
+
+**Changed: repository name cleanup**
+- The README clone and releases links, the `packaging/` docs, the status-bar bug-report link (`REPO_URL`) and the update check (`update_check.py`) use the current repository name, `zakgm2/PyAT`, instead of the old ones.
+
+---
+
 ## v3.0.0
 **Changed: the app is now PyAT (Python Analysis Tool)** — a new major version because the name changed; nothing about how existing recordings, sidecar files or saved settings work was broken by it.
 - Renamed everywhere a user sees it: the window title, the citation and update-available text, the README / `packaging/` / `MACOS_INSTALL.md` docs, and the built artifacts — CI now produces `PyAT.exe` (Windows) and `PyAT.app` (macOS) and names the release assets to match (`PhysicsAnalysis.spec` builds with `name='PyAT'`; the spec file's own name is unchanged). The desktop launcher shortcut is now `Python Analysis Tool.lnk`.

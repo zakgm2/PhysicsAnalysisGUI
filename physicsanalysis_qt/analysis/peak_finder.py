@@ -116,7 +116,16 @@ class _PeakFinderDialog(QDialog):
         self.spin_z = QDoubleSpinBox()
         self.spin_z.setRange(0.5, 20.0)
         self.spin_z.setSingleStep(0.25)
-        self.spin_z.setValue(2.5)
+        # 5 = the usual five-sigma convention. Each event's window is searched for
+        # its LARGEST z, so a low threshold "finds" a response by chance in most
+        # windows: on a real recording random pseudo-events got one 58% of the
+        # time at 2.5, 40% at 3, 21% at 4 and 10% at 5 (5 s baseline, 10 s window).
+        self.spin_z.setValue(5.0)
+        self.spin_z.setToolTip(
+            "How many standard deviations a peak must reach to count. Default 5.\n"
+            "Lower values find a \"response\" by chance in most event windows\n"
+            "(on a real recording, random events got one 58% of the time at 2.5, 10% at 5)."
+        )
         row1.addWidget(self.spin_z)
         layout.addLayout(row1)
 
